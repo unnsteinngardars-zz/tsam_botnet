@@ -33,3 +33,8 @@
 
 # VS code debugging
 *.dSYM
+
+.vs/
+.vscode/
+chat_client
+tsamgroup33

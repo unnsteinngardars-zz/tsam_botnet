@@ -12,4 +12,4 @@ server: $(SERVER) $(UTILITIES)
 	$(CXX) $(CXXFLAGS) -o tsamgroup33 $(SERVER) $(UTILITIES)
 
 client: $(CLIENT)
-	$(CXX) $(CXXFLAGS) -o chat_client $(CLIENT) 
+	$(CXX) $(CXXFLAGS) -lncurses -o chat_client $(CLIENT) $(UTILITIES)
