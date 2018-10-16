@@ -19,11 +19,11 @@ Server::Server()
 	server_conn_port.first = socket_utilities::create_tcp_socket();
 	client_conn_port.first = socket_utilities::create_tcp_socket();
 	udp_port.first = socket_utilities::create_udp_socket();
-	// searching for available ports, replace with parameters when implemented fully
-	socket_utilities::find_available_port(server_conn_port, 4000, 4100);
-	socket_utilities::find_available_port(client_conn_port, 49152, 65535);
-	socket_utilities::find_available_port(udp_port, 49152, 65535);
-	
+
+	socket_utilities::bind_to_address(server_conn_port, 4000);
+	socket_utilities::bind_to_address(client_conn_port, 49152);
+	socket_utilities::bind_to_address(udp_port, 4001);
+
 	socket_utilities::listen_on_socket(server_conn_port.first);
 	socket_utilities::listen_on_socket(client_conn_port.first);
 
@@ -147,7 +147,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 		/* Check if the client is in the active set */
 		if (FD_ISSET(i, &active_set))
 		{
-			if (i != server_conn_port.first && i != client_conn_port.first && i != fd)
+			if (i != server_conn_port.first && i != client_conn_port.first && i != udp_port.first && i != fd)
 			{
 				write_to_client(i, body);
 			}
@@ -218,6 +218,7 @@ void Server::write_to_client(int fd, std::string message)
 	{
 		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
 		{
+			printf("silently dropping client connection\n");
 			FD_CLR(fd, &active_set);
 			close(fd);
 		}
@@ -379,6 +380,11 @@ void Server::parse_buffer(char * buffer, int fd)
 	}
 }
 
+void Server::listservers(struct sockaddr_in address, int fd)
+{
+	std::string message = "LISTSERVERS\n";
+}
+
 
 /**
  * Run the server
@@ -390,12 +396,14 @@ int Server::run()
 	printf("Listening for client connections on port %d\n", ntohs(client_conn_port.second.sin_port));
 	printf("Listening for server connections on port %d\n", ntohs(server_conn_port.second.sin_port));
 	printf("Listening for udp connections on port %d\n", ntohs(udp_port.second.sin_port));
+	
 	while (1)
 	{
 		/* copy active_set to read_set to not loose information about active_set status since select alters the set passed as argument */
-		read_set = active_set;
+		fd_set read_set = active_set;
 		/* wait for incomming client/s */
-		if (select(max_file_descriptor + 1, &read_set, NULL, NULL, 0) < 0)
+
+		if (select(max_file_descriptor + 1, &read_set, NULL, NULL, NULL) < 0)
 		{
 			if (errno == EBADF)
 			{
@@ -404,17 +412,33 @@ int Server::run()
 			socket_utilities::error("Failed to receive client connection");
 		}
 
+
 		/* Loop from 0 to max FD to act on any read ready file descriptor */
 		for (int i = 0; i <= max_file_descriptor; i++)
 		{
 			if (FD_ISSET(i, &read_set))
 			{
-	
+				//TODO: when TCP connections has opened a connection and executed a command. the UDP connection gets shut down
+				if (i == udp_port.first)
+				{
+					memset(buffer, 0, MAX_BUFFER_SIZE);
+					struct sockaddr_in udp_sender;
+					socklen_t sender_length = sizeof(udp_sender);
+					int read_bytes = recvfrom(udp_port.first, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*) &udp_sender, &sender_length);
+					if (read_bytes > 0)
+					{
+						listservers(udp_sender, i);
+						printf("Data\n");
+
+					}
+				}
+
 				/* server trying to connect to us */
 				/* Add second check later to destinguish between server connecting and client connecting */
-				if (i == server_conn_port.first || i == client_conn_port.first)
+				else if (i == server_conn_port.first || i == client_conn_port.first)
 				{
-					client_length = sizeof(client);
+					struct sockaddr_in client;
+					socklen_t client_length = sizeof(client);
 					int client_fd = accept_connection(i, client, client_length);
 					printf("Connection established from %s port %d and fd %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), client_fd);
 					std::string welcome_message = "Welcome, type HELP for available commands\n";
@@ -431,6 +455,7 @@ int Server::run()
 					{
 						if (!(errno == EWOULDBLOCK || errno == EAGAIN))
 						{
+							printf("silently dropping client connection\n");
 							FD_CLR(i, &active_set);
 							close(i);
 						}

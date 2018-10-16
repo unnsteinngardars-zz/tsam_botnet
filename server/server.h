@@ -38,10 +38,10 @@ class Server
 	std::pair<int, struct sockaddr_in> server_conn_port;
 	std::pair<int, struct sockaddr_in> client_conn_port;
 	std::pair<int, struct sockaddr_in> udp_port;
-	struct sockaddr_in client;
-	socklen_t client_length;
+	// struct sockaddr_in client;
+	// socklen_t client_length;
 
-	fd_set active_set, read_set; // might want to add write_set
+	fd_set active_set; // might want to add write_set
 	
 	int MAX_BUFFER_SIZE;
 	int max_file_descriptor;
@@ -66,7 +66,7 @@ class Server
 	void remove_from_set(std::string username);
 	void update_max_fd(int fd);
 	int accept_connection(int socket, sockaddr_in& address, socklen_t & length);
-
+	void listservers(struct sockaddr_in address, int fd);
   public:
 	Server();
 	int run();
