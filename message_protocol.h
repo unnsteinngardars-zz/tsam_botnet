@@ -32,7 +32,18 @@ class MessageProtocol
 
         int SendMessage(int to, string msg)
         {
-            HEAD_LEN len = msg.length();
+            if(!fd_is_valid(to)) return -1;
+            
+            char send_buffer[BUFFER_LENGTH];
+            strcpy(send_buffer, msg.c_str());
+            
+            int write_bytes = send(to, send_buffer, BUFFER_LENGTH, 0);
+            if (write_bytes < 0)
+                return -1;
+            else
+                return write_bytes;
+
+            /*HEAD_LEN len = msg.length();
             if(!fd_is_valid(to)) return -1;
 
             ssize_t len_fail = send(to, &len, sizeof(HEAD_LEN), 0);
@@ -42,7 +53,7 @@ class MessageProtocol
             if(!fd_is_valid(to)) return -1;
             int ret = send(to, msg.c_str(), len, 0);
             
-            return ret;
+            return ret;*/
         }
 
         char* ReadCount(int socket, int len)
@@ -65,6 +76,29 @@ class MessageProtocol
 
         tuple<string, bool> ReadMessage(int socket)
         {
+            //New protocol is just buffer[1024], read into that and hope it doesn't overflow
+            char recv_buffer[BUFFER_LENGTH];
+            memset(recv_buffer, 0, BUFFER_LENGTH);
+            
+            int read_bytes = recv(socket, recv_buffer, BUFFER_LENGTH, 0);
+            if (read_bytes <= 0)
+            {
+                //close(socket);
+                return make_tuple("", false);
+            }
+            else 
+            {
+
+                int buffer_length = strlen(recv_buffer);
+                char local_buffer[buffer_length];
+                memset(local_buffer, 0, buffer_length);
+                memcpy(local_buffer, recv_buffer, buffer_length + 1);
+                //printf("%s", local_buffer);
+                return make_tuple(string(local_buffer), true);
+            }
+
+
+            /*
             //Our header is 4bytes long, describing the length of the message that follows
             HEAD_LEN msg_len;
             char* c = ReadCount(socket, sizeof(msg_len));
@@ -79,7 +113,10 @@ class MessageProtocol
             delete[] msg;
 
             return make_tuple(retval, true);
+            */
         }
+        private:
+            int BUFFER_LENGTH = 1024;
 };
 
 #endif

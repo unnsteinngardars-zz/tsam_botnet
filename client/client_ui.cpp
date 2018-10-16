@@ -14,6 +14,7 @@
 #include <sstream>
 #include <utility>
 #include <signal.h>
+#include "../utilities/string_utilities.h"
 
 using namespace std;
 
@@ -168,11 +169,18 @@ void ClientUI::UpdateNames()
 {
     _users.clear();
     int msock = _c.GetSocket();
-    _c.SendMessage(msock, "/who");
+    _c.SendMessage(msock, "WHO");
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(msock, &readfds);
     /*
+    Now it returns:
+    LIST OF USERS:
+     user1
+     user2
+     ...
+     userN
+
     returns: 
     how many users N
     user1
@@ -183,7 +191,14 @@ void ClientUI::UpdateNames()
     select(msock+1, &readfds, NULL, NULL, NULL);
     if(FD_ISSET(msock, &readfds))
     {
-        auto t_num_users = _c.ReadMessage(msock);
+        //The return value is just one giant string.
+        auto users = _c.ReadMessage(msock);
+        //\nLIST OF USERS:\n username\n username\n username\n
+        auto user_vector = split_by_delimeter(users, "\n");
+        user_vector.erase(user_vector.start()); //erase the first value (LIST OF USERS)
+        
+
+        /*auto t_num_users = _c.ReadMessage(msock);
         if(get<1>(t_num_users))
         {
             int num_users = atoi(get<0>(t_num_users).c_str());
@@ -193,7 +208,7 @@ void ClientUI::UpdateNames()
                 if(get<1>(t_user))
                     _users.push_back(get<0>(t_user));
             }
-        }
+        }*/
     }
 }
 
