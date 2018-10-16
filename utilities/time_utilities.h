@@ -14,6 +14,9 @@
 namespace time_utilities
 {
 	std::string get_time_stamp();
+	void set_timer(time_t& t);
+	void stop_timer(time_t& t);
+	int get_time_in_seconds(time_t& start, time_t& stop);
 }
 
 #endif

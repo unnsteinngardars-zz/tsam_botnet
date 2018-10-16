@@ -5,67 +5,44 @@
 */
 Server::Server()
 {
-	set_fortune();
+
+	id = "tsamgroup33"; // might later take in argv[0] from main and assign
+	FD_ZERO(&active_set);
+	struct sockaddr_in s;
+	struct sockaddr_in c;
+	struct sockaddr_in u;
+
+	server_conn_port.second = s;
+	client_conn_port.second = c;
+	udp_port.second = u;
+	
+	server_conn_port.first = socket_utilities::create_tcp_socket();
+	client_conn_port.first = socket_utilities::create_tcp_socket();
+	udp_port.first = socket_utilities::create_udp_socket();
+	// searching for available ports, replace with parameters when implemented fully
+	socket_utilities::find_available_port(server_conn_port, 4000, 4100);
+	socket_utilities::find_available_port(client_conn_port, 49152, 65535);
+	socket_utilities::find_available_port(udp_port, 49152, 65535);
+	
+	socket_utilities::listen_on_socket(server_conn_port.first);
+	socket_utilities::listen_on_socket(client_conn_port.first);
+
+	FD_SET(server_conn_port.first, &active_set);
+	FD_SET(client_conn_port.first, &active_set);
+	FD_SET(udp_port.first, &active_set);
+	max_file_descriptor = server_conn_port.first > client_conn_port.first ? server_conn_port.first : client_conn_port.first;
+	max_file_descriptor = udp_port.first > max_file_descriptor ? udp_port.first : max_file_descriptor;
 }
 
-/**
- * Set the fortune
-*/
-void Server::set_fortune()
-{
-	FILE* fp;
-	char path[1035];
-	std::string fort = "";
-	fp = popen("/bin/fortune -s", "r");
-	if (fp == NULL){
-		printf("No command f");
-	}
-	while (fgets(path, sizeof(path) - 1, fp) != NULL){
-		fort += std::string(path);
-	}
-	pclose(fp);
-	if (fort.compare(""))
-	{
-		fort += "_Y_Project_2_22_" + time_utilities::get_time_stamp();
-		id = fort;
-	}
-	else{
-		id = "NO_ID";
-	}
-	fprintf(stdout, "fortune: %s\n", id.c_str());
-}
 
 /**
  * Get the fortune
 */
-std::string Server::get_fortune()
+std::string Server::get_id()
 {
 	return id;
 }
 
-/**
- * Start the knock timer
-*/
-void Server::set_timer()
-{
-	time(&knock_start);
-}
-
-/**
- * End the knock timer
-*/
-void Server::stop_timer()
-{
-	time(&knock_stop);
-}
-
-/**
- * Get knock time elapsed in seconds
-*/
-int Server::get_time_in_seconds()
-{
-	return difftime(knock_stop, knock_start);
-}
 
 /**
  * Set the max buffer size
@@ -74,42 +51,6 @@ void Server::set_max_buffer(int size)
 {
 	MAX_BUFFER_SIZE = size;
 }
-
-/**
- * Create server sockets
-*/
-void Server::create_sockets()
-{
-	for (int i = 0; i < 3; ++i)
-	{
-		int socket = socket_utilities::create_socket();
-		struct sockaddr_in address;
-		servers.push_back(Pair(socket, address));
-	}
-}
-
-/**
- * Add server sockets to active set
-*/
-void Server::add_to_active_set()
-{
-	for (int i = 0; i < servers.size(); ++i)
-	{
-		FD_SET(servers[i].first, &active_set);
-	}
-}
-
-/**
- * Listen to server sockets
-*/
-void Server::listen_to_sockets()
-{
-	for (int i = 0; i < servers.size(); ++i)
-	{
-		socket_utilities::listen_on_socket(servers[i].first);
-	}
-}
-
 
 /**
  * Update the maximum file descriptor variable
@@ -139,7 +80,6 @@ int Server::accept_connection(int socket, sockaddr_in& address, socklen_t & leng
 */
 void Server::display_commands(int fd)
 {
-	// TODO:: ADD ID commands!
 	std::string help_message = "\nAvailable commands are:\n\n";
 	help_message += "ID\t\tGet the ID of the server\n";
 	help_message += "CHANGE ID\t\tChange the ID of the server\n";
@@ -189,7 +129,7 @@ bool Server::add_user(BufferContent& buffer_content, std::string& feedback_messa
 		feedback_message = "Username already taken\n";
 		return false;
 	}
-	usernames.insert(std::pair<int, std::string>(fd, username));
+	usernames.insert(Client(fd, username));
 	usernames_set.insert(username);
 	feedback_message = username + " has logged in to the server\n";
 	return true;
@@ -207,8 +147,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 		/* Check if the client is in the active set */
 		if (FD_ISSET(i, &active_set))
 		{
-			/* prevent the received message from the client from beeing sent to the server and himself */
-			if (i != servers.at(0).first && i != servers.at(1).first && i != servers.at(2).first && i != fd)
+			if (i != server_conn_port.first && i != client_conn_port.first && i != fd)
 			{
 				write_to_client(i, body);
 			}
@@ -301,7 +240,6 @@ void Server::execute_command(BufferContent& buffer_content)
 
 	if ((!command.compare("ID"))) 
 	{
-		printf("client requesting ID\n");
 		write_to_client(fd, id + "\n");
 	}
 
@@ -320,6 +258,7 @@ void Server::execute_command(BufferContent& buffer_content)
 		}
 
 	}
+
 	else if ((!command.compare("LEAVE"))) 
 	{
 		if (user_exists(fd))
@@ -334,9 +273,8 @@ void Server::execute_command(BufferContent& buffer_content)
 		}
 		FD_CLR(fd, &active_set);
 		socket_utilities::close_socket(fd);
-
-
 	}
+
 	else if ((!command.compare("WHO"))) 
 	{
 		display_users(buffer_content);
@@ -350,7 +288,6 @@ void Server::execute_command(BufferContent& buffer_content)
 			if (!sub_command.compare("ALL"))
 			{
 				// send to all
-				printf("send to all\n");
 				buffer_content.set_body(sending_user + ": " + buffer_content.get_body() + "\n");
 				send_to_all(buffer_content);
 			}
@@ -375,7 +312,6 @@ void Server::execute_command(BufferContent& buffer_content)
 				// no user found
 				else
 				{	
-					printf("no user found\n");
 					feedback_message = "No such user\n";
 					write_to_client(fd, feedback_message);
 				}
@@ -388,15 +324,6 @@ void Server::execute_command(BufferContent& buffer_content)
 			write(fd, feedback_message.c_str(), feedback_message.length());
 		}
 	
-	}
-	else if ((!command.compare("CHANGE"))) 
-	{
-		sub_command = buffer_content.get_sub_command();
-		if( (!sub_command.compare("ID")) )
-		{
-			printf("change id\n");
-			set_fortune();
-		}
 	}
 	else if ( (!command.compare("HELP")) )
 	{
@@ -458,43 +385,11 @@ void Server::parse_buffer(char * buffer, int fd)
 */
 int Server::run()
 {
-	int MIN_PORT = 49152;
-	int MAX_PORT = 65532;
-	
-	/* zero the active set */
-	FD_ZERO(&active_set);
-
-	/* the struct for the incomming client info */
-	struct sockaddr_in client;
-
-	/* client_length is used for the accept call */
-	socklen_t client_length;
-
 	/* buffer for messages */
 	char buffer[MAX_BUFFER_SIZE];
-
-	/* Create 3 sockets/sockaddr_in */
-	create_sockets();
-
-	/* find 3 consecutive ports to bind to */
-	if (socket_utilities::find_consecutive_ports(MIN_PORT, MAX_PORT, servers) < 0)
-	{
-		socket_utilities::error("Failed to bind to ports");
-	}
-
-	/* listen and add to active set */
-	listen_to_sockets();
-	add_to_active_set();
-
-	bool knocked_first = false;
-	bool knocked_second = false;
-
-	int first_port = ntohs(servers.at(0).second.sin_port);
-	int second_port = ntohs(servers.at(1).second.sin_port);
-	int third_port = ntohs(servers.at(2).second.sin_port);
-	printf("ports %d %d %d\n", first_port, second_port, third_port);
-	max_file_descriptor = servers.at(servers.size() - 1).first;
-
+	printf("Listening for client connections on port %d\n", ntohs(client_conn_port.second.sin_port));
+	printf("Listening for server connections on port %d\n", ntohs(server_conn_port.second.sin_port));
+	printf("Listening for udp connections on port %d\n", ntohs(udp_port.second.sin_port));
 	while (1)
 	{
 		/* copy active_set to read_set to not loose information about active_set status since select alters the set passed as argument */
@@ -514,60 +409,18 @@ int Server::run()
 		{
 			if (FD_ISSET(i, &read_set))
 			{
-				/* if i is the first open port */
-				if (i == servers.at(0).first)
+	
+				/* server trying to connect to us */
+				/* Add second check later to destinguish between server connecting and client connecting */
+				if (i == server_conn_port.first || i == client_conn_port.first)
 				{
-					if (!knocked_second)
-					{
-						set_timer();
-						knocked_first = true;
-					}
-					struct sockaddr_in client;
-					socklen_t client_length;
+					client_length = sizeof(client);
 					int client_fd = accept_connection(i, client, client_length);
-					close(client_fd);
-				}
-				/* if i is the second open port */
-				else if (i == servers.at(1).first)
-				{
-					if(knocked_first)
-					{
-						knocked_second = true;
-					}
-					struct sockaddr_in client;
-					socklen_t client_length;
-					int client_fd = accept_connection(i, client, client_length);
-					close(client_fd);
-				}
-				/* if i is the third open port which is the connect port */
-				else if (i == servers.at(2).first)
-				{
-					stop_timer();
-					int seconds = get_time_in_seconds();
-					/* if time is within 2 seconds and first and second knocks are true then let in */
-					if (seconds < 2 && knocked_first && knocked_second) 
-					{
-						client_length = sizeof(client);
-						int client_fd = accept_connection(i, client, client_length);
-						printf("Connection established from %s port %d and fd %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), client_fd);
-						std::string welcome_message = "Welcome, type HELP for available commands\n";
-						write_to_client(client_fd, welcome_message);
-						FD_SET(client_fd, &active_set);
-						update_max_fd(client_fd);
-						knocked_first = false;
-						knocked_second = false;
-
-					}
-					else 
-					{
-						struct sockaddr_in client;
-						socklen_t client_length;
-						int client_fd = accept_connection(i, client, client_length);
-						close(client_fd);
-						knocked_first = false;
-						knocked_second = false;
-					}
-
+					printf("Connection established from %s port %d and fd %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), client_fd);
+					std::string welcome_message = "Welcome, type HELP for available commands\n";
+					write_to_client(client_fd, welcome_message);
+					FD_SET(client_fd, &active_set);
+					update_max_fd(client_fd);
 				}
 				/* i is some already connected client that has send a message */
 				else 
@@ -614,85 +467,4 @@ int Server::run()
 }
 
 
-void Server::set_scan_destination(std::string dest_host)
-{
-	destination_server = gethostbyname(dest_host.c_str());
 
-}
-
-
-void Server::knock_port(int port, char * buffer)
-{
-	memset(buffer, 0, 1024);
-	std::string command = "CONNECT Y_Project_2_22\\ID\\CHANGE ID\\LEAVE";
-	int fd = socket_utilities::create_socket();
-	struct sockaddr_in address;
-	memset(&address, 0, sizeof(address));
-	address.sin_family = AF_INET;
-	address.sin_port = htons(port);		
-	memcpy((char*)&address.sin_addr.s_addr, (char*) destination_server->h_addr, destination_server->h_length);
-	int i = socket_utilities::connect(fd, address);
-	if (i < 1)
-	{
-		return;
-	}
-
-	else
-	{
-		int send_bytes = send(fd, command.c_str(), command.length(), 0);
-		if (send_bytes < 1)
-		{
-			return;
-		}
-		int read_bytes = recv(fd, buffer, 1024, 0);
-		if (read_bytes < 1)
-		{
-			return;
-		}
-		else
-		{	
-			printf("port: %d\n", port);
-			printf("%s\n", buffer);
-			printf("CONNECTED!\n");
-			return;
-		}
-		
-	}
-}
-
-
-
-void Server::scan(int min_port, int max_port, bool scan_when_running)
-{
-	
-	char buffer[1024];
-	
-	for(int i = min_port; i < max_port; ++i)
-	{
-		int first_port = i;
-		int second_port = i + 1;
-		int third_port = i + 2;
-
-		if (scan_when_running)
-		{
-			if (i != ntohs(servers.at(0).second.sin_port) && i !=  ntohs(servers.at(1).second.sin_port) && i != ntohs(servers.at(2).second.sin_port) && scan_when_running)
-			{
-				knock_port(first_port, buffer);
-				knock_port(second_port, buffer);
-				knock_port(third_port, buffer);
-				printf("buffer: %s\n", buffer);
-			}
-			else
-			{
-				break;
-			}	
-		}
-		else
-		{
-			knock_port(first_port, buffer);
-			knock_port(second_port, buffer);
-			knock_port(third_port,buffer);
-		}
-	
-	}
-}
