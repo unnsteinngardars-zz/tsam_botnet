@@ -80,12 +80,15 @@ int ClientUI::CheckMessages()
             bool success = get<1>(msg_suc);
             if(success)
             {
-                if(StartsWithCaseInsensitive(msg, "SERVER>"))
+                UpdateNames(); //just update names regularly
+                //sanitize input
+                auto msg_sanitizied = string_utilities::split_by_delimeter(msg, "\n");
+                for(auto s : msg_sanitizied)
                 {
-                    UpdateNames();
+                    if(s.size() > 0)
+                        _messages.insert(_messages.begin(), s);
                 }
-                _messages.insert(_messages.begin(), msg);
-                
+                    
             }
                 
         }
@@ -97,7 +100,9 @@ int ClientUI::CheckMessages()
                 case ERR: break;
                 case 10 : //enter
                     if(!_msg.empty())
+                    {
                         _c.SendMessage(_c.GetSocket(), _msg);
+                    }
                     if(_msg == "/leave")
                     {
                         close(_c.GetSocket());
@@ -194,10 +199,18 @@ void ClientUI::UpdateNames()
         //The return value is just one giant string.
         auto users = _c.ReadMessage(msock);
         //\nLIST OF USERS:\n username\n username\n username\n
-        auto user_vector = split_by_delimeter(users, "\n");
-        user_vector.erase(user_vector.start()); //erase the first value (LIST OF USERS)
+        if(get<1>(users))
+        {
+            auto user_vector = string_utilities::split_by_delimeter(get<0>(users), "\n");
+            user_vector.erase(user_vector.begin(), user_vector.begin()+2); //erase the first value (LIST OF USERS)
+            for(auto a : user_vector)
+            {
+                if(a.size() == 0) continue;
+                auto usrname = a.substr(1, a.size()); //for some reason, the names begin with a space
+                _users.push_back(usrname);
+            }
+        }
         
-
         /*auto t_num_users = _c.ReadMessage(msock);
         if(get<1>(t_num_users))
         {
