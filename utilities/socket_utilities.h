@@ -13,8 +13,7 @@
 
 #include <vector>
 
-typedef std::vector<std::pair<int, struct sockaddr_in> > Servers;
-typedef std::pair<int, struct sockaddr_in> Pair;
+typedef std::pair<int, struct sockaddr_in> Connection;
 
 /**
  * Utilities for socket functionality
@@ -24,11 +23,11 @@ namespace socket_utilities
 
 	void error(const char *message);
 
-	int create_socket();
+	int create_tcp_socket();
+
+	int create_udp_socket();
 
 	int bind_to_address(int fd, struct sockaddr_in& address, int port);
-
-	int find_consecutive_ports(int min_port, int max_port, Servers &servers);
 
 	void listen_on_socket(int fd);
 	
@@ -37,6 +36,8 @@ namespace socket_utilities
 	int write_to_client(int fd, std::string message);
 
 	int connect(int fd, sockaddr_in& address);
+
+	int find_available_port(Connection& connection, int min_port, int max_port);
 } 
 
 #endif

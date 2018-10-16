@@ -6,18 +6,18 @@ void socket_utilities::error(const char *message)
 	exit(EXIT_FAILURE);
 }
 
-int socket_utilities::create_socket()
+int socket_utilities::create_tcp_socket()
 {
 	/* Variable declarations */
 	int fd;
 
 	/* Create the socket file descriptor */
-	fd = socket(PF_INET, SOCK_STREAM, 0);
+	fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	/* check for error */
 	if (fd < 0)
 	{
-		error("Failed creating socket");
+		error("Failed creating TCP socket");
 	}
 
 	/* Prevent the Address aldready in use message when the socket still hangs around in the kernel after server shutting down */
@@ -28,6 +28,18 @@ int socket_utilities::create_socket()
 		error("Failed to prevent \"Address aldready in use\" message");
 	}
 
+	return fd;
+}
+
+int socket_utilities::create_udp_socket()
+{
+	int fd;
+	fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+	if (fd < 0)
+	{
+		error("Failed creating UDP socket");
+	}
 	return fd;
 }
 
@@ -49,25 +61,22 @@ int socket_utilities::bind_to_address(int fd, struct sockaddr_in& address, int p
 	return 1;
 }
 
-int socket_utilities::find_consecutive_ports(int min_port, int max_port, Servers &servers)
-{
-	for (int i = min_port; i < max_port; ++i)
+int socket_utilities::find_available_port(Connection& connection, int min_port, int max_port)
+{	
+	int i;
+	for (i = min_port; i <= max_port; ++i)
 	{
-		for (int j = 0; j < servers.size(); ++j)
-		{
-			int fd = servers[j].first;
-			if (bind_to_address(fd, servers[j].second, i + j) < 0)
-			{
-				break;
-			}
-			if (j == servers.size() - 1)
-			{
-				return 1;
-			}
+		if (bind_to_address(connection.first, connection.second, i) < 0){
+			break;
+		}
+		else {
+			return 1;
 		}
 	}
 	return -1;
 }
+
+
 
 void socket_utilities::listen_on_socket(int fd)
 {
