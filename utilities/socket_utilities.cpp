@@ -95,11 +95,7 @@ void socket_utilities::listen_on_socket(int fd)
 	}
 }
 
-void socket_utilities::close_socket(int fd){
-	close(fd);
-}
-
-int socket_utilities::write_to_client(int fd, std::string message)
+int socket_utilities::write_to_fd(int fd, std::string message)
 {
 	int write_bytes = send(fd, message.c_str(), message.size(), 0);
 	return write_bytes;

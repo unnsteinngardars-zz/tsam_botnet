@@ -32,6 +32,7 @@ Server::Server()
 	FD_SET(udp_port.first, &active_set);
 	max_file_descriptor = server_conn_port.first > client_conn_port.first ? server_conn_port.first : client_conn_port.first;
 	max_file_descriptor = udp_port.first > max_file_descriptor ? udp_port.first : max_file_descriptor;
+	MAX_SERVER_CONNECTIONS = 5;
 }
 
 
@@ -65,13 +66,38 @@ void Server::update_max_fd(int fd)
 /**
  * Accept a connection
 */
-int Server::accept_connection(int socket, sockaddr_in& address, socklen_t & length)
+int Server::accept_connection(int fd, struct sockaddr_in& address)
 {
-	int new_socket = accept(socket, (struct sockaddr *)&address, &length);
+
+	socklen_t address_length = sizeof(address);
+	int new_socket = accept(fd, (struct sockaddr *)&address, &address_length);
 	if(new_socket < 0){
 		socket_utilities::error("Failed to establish connection");
 	}
+	printf("Connection established from %s port %d and fd %d\n", inet_ntoa(address.sin_addr), ntohs(address.sin_port), new_socket);	
 	return new_socket;
+}
+
+void Server::add_to_serverlist(int fd, struct sockaddr_in& address)
+{
+	if(neighbour_connections < MAX_SERVER_CONNECTIONS)
+	{
+		std::pair<std::string, int> host_and_port;
+		host_and_port.first = inet_ntoa(address.sin_addr);
+		host_and_port.second = ntohs(address.sin_port);
+		neighbours.insert(Neighbour(fd, host_and_port));
+		neighbour_connections++;
+		FD_SET(fd, &active_set);
+		update_max_fd(fd);
+	}
+	else 
+	{
+		std::string message = "Server has maximized allowed connections\n";
+		printf("closing connection on fd: %d\n", fd);
+		write_to_fd(fd, message);
+		FD_CLR(fd, &active_set);
+		close(fd);
+	}
 }
 
 
@@ -104,7 +130,7 @@ void Server::display_users(BufferContent& buffer_content)
 		std::string username = *it;
 		users += " " + username + "\n";
 	}
-	write_to_client(fd, users);
+	write_to_fd(fd, users);
 }
 
 /**
@@ -149,7 +175,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 		{
 			if (i != server_conn_port.first && i != client_conn_port.first && i != udp_port.first && i != fd)
 			{
-				write_to_client(i, body);
+				write_to_fd(i, body);
 			}
 		}
 	}
@@ -162,7 +188,7 @@ void Server::send_to_user(int rec_fd, BufferContent& buffer_content)
 {
 	std::string body = buffer_content.get_body();
 	if (FD_ISSET(rec_fd, &active_set)){
-		write_to_client(rec_fd, body);
+		write_to_fd(rec_fd, body);
 	}
 }
 
@@ -212,19 +238,18 @@ int Server::get_fd_by_user(std::string username)
 	return fd;
 }
 
-void Server::write_to_client(int fd, std::string message)
+void Server::write_to_fd(int fd, std::string message)
 {
-	if (socket_utilities::write_to_client(fd, message) < 0)
+	if (socket_utilities::write_to_fd(fd, message) < 0)
 	{
 		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
 		{
-			printf("silently dropping client connection\n");
 			FD_CLR(fd, &active_set);
 			close(fd);
 		}
 		else if (errno == EBADF)
 		{
-			printf("Bad file descriptor error for fd: %d\n", fd);
+			printf("Bad file descriptor\n");
 		}
 	}
 }
@@ -241,7 +266,7 @@ void Server::execute_command(BufferContent& buffer_content)
 
 	if ((!command.compare("ID"))) 
 	{
-		write_to_client(fd, id + "\n");
+		write_to_fd(fd, id + "\n");
 	}
 
 	else if ((!command.compare("CONNECT"))) 
@@ -273,7 +298,7 @@ void Server::execute_command(BufferContent& buffer_content)
 
 		}
 		FD_CLR(fd, &active_set);
-		socket_utilities::close_socket(fd);
+		close(fd);
 	}
 
 	else if ((!command.compare("WHO"))) 
@@ -307,14 +332,14 @@ void Server::execute_command(BufferContent& buffer_content)
 					else
 					{
 						feedback_message = "Cannot send message to yourself\n";
-						write_to_client(fd, feedback_message);
+						write_to_fd(fd, feedback_message);
 					}
 				}
 				// no user found
 				else
 				{	
 					feedback_message = "No such user\n";
-					write_to_client(fd, feedback_message);
+					write_to_fd(fd, feedback_message);
 				}
 			}
 		}
@@ -334,7 +359,7 @@ void Server::execute_command(BufferContent& buffer_content)
 	else
 	{
 		feedback_message = "Unknown command, type HELP for commands\n";
-		write_to_client(fd, feedback_message);
+		write_to_fd(fd, feedback_message);
 	}
 
 }
@@ -383,6 +408,7 @@ void Server::parse_buffer(char * buffer, int fd)
 void Server::listservers(struct sockaddr_in address, int fd)
 {
 	std::string message = "LISTSERVERS\n";
+	//TODO: Send list servers!
 }
 
 
@@ -405,11 +431,14 @@ int Server::run()
 
 		if (select(max_file_descriptor + 1, &read_set, NULL, NULL, NULL) < 0)
 		{
-			if (errno == EBADF)
+			if (errno == EBADF || errno == EAGAIN)
 			{
 				printf("Bad file descriptor\n");
 			}
-			socket_utilities::error("Failed to receive client connection");
+			else
+			{
+				socket_utilities::error("select failed");
+			}
 		}
 
 
@@ -428,21 +457,24 @@ int Server::run()
 					if (read_bytes > 0)
 					{
 						listservers(udp_sender, i);
-						printf("Data\n");
-
 					}
 				}
-
+				else if (i == server_conn_port.first)
+				{
+					struct sockaddr_in address;
+					int server_fd = accept_connection(i, address);
+					printf("server conn address %s server conn port %d\n", inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+					add_to_serverlist(server_fd, address);
+		
+				}
 				/* server trying to connect to us */
 				/* Add second check later to destinguish between server connecting and client connecting */
-				else if (i == server_conn_port.first || i == client_conn_port.first)
+				else if (i == client_conn_port.first)
 				{
-					struct sockaddr_in client;
-					socklen_t client_length = sizeof(client);
-					int client_fd = accept_connection(i, client, client_length);
-					printf("Connection established from %s port %d and fd %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), client_fd);
+					struct sockaddr_in address;
+					int client_fd = accept_connection(i, address);
 					std::string welcome_message = "Welcome, type HELP for available commands\n";
-					write_to_client(client_fd, welcome_message);
+					write_to_fd(client_fd, welcome_message);
 					FD_SET(client_fd, &active_set);
 					update_max_fd(client_fd);
 				}
@@ -477,7 +509,7 @@ int Server::run()
 							remove_from_set(username);
 						}
 						FD_CLR(i, &active_set);
-						socket_utilities::close_socket(i);
+						close(i);
 					}
 					else 
 					{

@@ -31,10 +31,8 @@ namespace socket_utilities
 	int bind_to_address(Connection& connection, int port);
 
 	void listen_on_socket(int fd);
-	
-	void close_socket(int fd);
 
-	int write_to_client(int fd, std::string message);
+	int write_to_fd(int fd, std::string message);
 
 	int connect(int fd, sockaddr_in& address);
 

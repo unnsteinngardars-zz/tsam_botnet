@@ -25,12 +25,15 @@
 
 typedef std::pair<int, struct sockaddr_in> Connection;
 typedef std::pair<int, std::string> Client;
+typedef std::pair<int, std::pair<std::string, int> > Neighbour;
 
 
 class Server
 {
 	private:
 	/* Variables */
+	std::map<int, std::pair<std::string, int> > neighbours;
+	int neighbour_connections;
 	std::map<int, std::string> usernames;
 	std::set<std::string> usernames_set;
 	std::string id;
@@ -38,12 +41,11 @@ class Server
 	std::pair<int, struct sockaddr_in> server_conn_port;
 	std::pair<int, struct sockaddr_in> client_conn_port;
 	std::pair<int, struct sockaddr_in> udp_port;
-	// struct sockaddr_in client;
-	// socklen_t client_length;
 
-	fd_set active_set; // might want to add write_set
+	fd_set active_set;
 	
 	int MAX_BUFFER_SIZE;
+	int MAX_SERVER_CONNECTIONS;
 	int max_file_descriptor;
 	
 	/* Methods */
@@ -62,11 +64,12 @@ class Server
 	/* helper methods */
 	int get_fd_by_user(std::string username);
 	bool user_exists(int fd);
-	void write_to_client(int fd, std::string message);
+	void write_to_fd(int fd, std::string message);
 	void remove_from_set(std::string username);
 	void update_max_fd(int fd);
-	int accept_connection(int socket, sockaddr_in& address, socklen_t & length);
+	int accept_connection(int fd, struct sockaddr_in& address);
 	void listservers(struct sockaddr_in address, int fd);
+	void add_to_serverlist(int fd, struct sockaddr_in& address);
   public:
 	Server();
 	int run();
