@@ -89,6 +89,7 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address)
 		neighbour_connections++;
 		FD_SET(fd, &active_set);
 		update_max_fd(fd);
+		// write_to_fd(fd)
 	}
 	else 
 	{
