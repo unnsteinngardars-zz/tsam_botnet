@@ -6,7 +6,7 @@ void socket_utilities::error(const char *message)
 	exit(EXIT_FAILURE);
 }
 
-int socket_utilities::create_tcp_socket()
+int socket_utilities::create_tcp_socket(bool nonblocking)
 {
 	/* Variable declarations */
 	int fd;
@@ -27,7 +27,10 @@ int socket_utilities::create_tcp_socket()
 	{
 		error("Failed to prevent \"Address aldready in use\" message");
 	}
-	make_non_blocking(fd);
+	if (nonblocking)
+	{
+		make_non_blocking(fd);
+	}
 	return fd;
 }
 
@@ -98,6 +101,10 @@ void socket_utilities::listen_on_socket(int fd)
 int socket_utilities::write_to_fd(int fd, std::string message)
 {
 	int write_bytes = send(fd, message.c_str(), message.size(), 0);
+	if (write_bytes < 0)
+	{
+		printf("errno: %d\n",errno);
+	}
 	return write_bytes;
 }
 

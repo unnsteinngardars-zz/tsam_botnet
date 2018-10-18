@@ -24,15 +24,14 @@
 #include "buffer_content.h"
 
 typedef std::pair<int, struct sockaddr_in> Connection;
-typedef std::pair<int, std::string> Client;
-typedef std::pair<int, std::pair<std::string, int> > Neighbour;
+typedef std::pair<int, std::string> Pair;
 
 
 class Server
 {
 	private:
 	/* Variables */
-	std::map<int, std::pair<std::string, int> > neighbours;
+	std::map<int, std::string> neighbours;
 	int neighbour_connections;
 	std::map<int, std::string> usernames;
 	std::set<std::string> usernames_set;
@@ -45,7 +44,7 @@ class Server
 	fd_set active_set;
 	
 	int MAX_BUFFER_SIZE;
-	int MAX_SERVER_CONNECTIONS;
+	int MAX_NEIGHBOUR_CONNECTIONS;
 	int max_file_descriptor;
 	
 	/* Methods */
@@ -68,10 +67,12 @@ class Server
 	void remove_from_set(std::string username);
 	void update_max_fd(int fd);
 	int accept_connection(int fd, struct sockaddr_in& address);
-	void listservers(struct sockaddr_in address, int fd);
-	void add_to_serverlist(int fd, struct sockaddr_in& address);
+	void listservers(struct sockaddr_in& address, int fd);
+	void accept_incomming_server(int fd, struct sockaddr_in& address);
+	void connect_to_server(std::string host, int port);
+	void add_to_serverlist(int fd, struct sockaddr_in& address, std::string server_id);
   public:
-	Server();
+	Server(int server_p, int client_p, int udp_p);
 	int run();
 	void set_max_buffer(int size);
 };

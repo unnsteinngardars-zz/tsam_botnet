@@ -24,7 +24,7 @@ namespace socket_utilities
 
 	void error(const char *message);
 
-	int create_tcp_socket();
+	int create_tcp_socket(bool nonblocking);
 
 	int create_udp_socket();
 
