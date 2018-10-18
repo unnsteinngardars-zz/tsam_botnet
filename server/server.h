@@ -67,10 +67,17 @@ class Server
 	void remove_from_set(std::string username);
 	void update_max_fd(int fd);
 	int accept_connection(int fd, struct sockaddr_in& address);
-	void listservers(struct sockaddr_in& address, int fd);
+	std::string listservers();
 	void accept_incomming_server(int fd, struct sockaddr_in& address);
 	void connect_to_server(std::string host, int port);
 	void add_to_serverlist(int fd, struct sockaddr_in& address, std::string server_id);
+	void disconnect_user(BufferContent& buffer_content);
+	void inform_about_disconnected_user(BufferContent& buffer_content);
+	void select_wrapper(fd_set& set);
+	void service_udp_request(int fd);
+	void service_tcp_server_request(int fd);
+	void service_tcp_client_request(int fd);
+	void receive_from_client_or_server(int fd);
   public:
 	Server(int server_p, int client_p, int udp_p);
 	int run();

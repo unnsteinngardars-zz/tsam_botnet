@@ -138,15 +138,11 @@ void Server::connect_to_server(std::string host, int port)
 	// create FD for new connection
 	int fd = socket_utilities::create_tcp_socket(false);
 	struct sockaddr_in address;
+	struct hostent* h;
+	h = gethostbyname(host.c_str());
 	address.sin_family = AF_INET;
 	address.sin_port = htons(port);
-	n = inet_pton(AF_INET, host.c_str(), &address.sin_addr);
-	if (n < 0)
-	{
-		printf("host %s is not on a valid format\n", host.c_str());
-		close(fd);
-		return;
-	}
+	memcpy((char*)&address.sin_addr.s_addr, (char*) h->h_addr, h->h_length);
 	
 	// connect
 	n = connect(fd, (struct sockaddr*) &address, sizeof(address));
@@ -169,12 +165,9 @@ void Server::connect_to_server(std::string host, int port)
 	}
 	else
 	{
-
 		string_utilities::trim_cstr(buffer);
 		server_id = std::string(buffer);
 	}
-
-
 	add_to_serverlist(fd, address, server_id);
 }
 
@@ -193,7 +186,7 @@ void Server::display_commands(int fd)
 	help_message += "MSG <user> <message>\tSend a message to specific user\n";
 	help_message += "MSG ALL <message>\tSend message to all users connected\n";
 	help_message += "HELP\t\t\tSe available commands\n\n";
-	write(fd, help_message.c_str(), help_message.length());
+	write_to_fd(fd, help_message);
 }
 
 /**
@@ -214,28 +207,24 @@ void Server::display_users(BufferContent& buffer_content)
 /**
  * List all neighbour servers
 */
-void Server::listservers(struct sockaddr_in& address, int fd)
+std::string Server::listservers()
 {
-	std::string message;
+	std::string servers;
 	if (neighbours.empty())
 	{
-		message = "Server " + get_id() + " has no neighbours\n";
+		servers = "Server " + get_id() + " has no neighbours\n";
 	}
 	else 
 	{
 		std::map<int, std::string>::iterator it;
 		for(it = neighbours.begin(); it != neighbours.end(); ++it)
 		{
-			message += it->second;
+			servers += it->second;
 		}
 	}
-	// send list of neighbours back to UDP socket
-	int n = sendto(fd, message.c_str(), message.length(), 0, (struct sockaddr*) &address, sizeof(address));
-	if (n < 0)
-	{
-		printf("Cannot send list of servers\n");
-	}
+	return servers;
 }
+
 
 /**
  * Add a newly connected user
@@ -351,10 +340,102 @@ void Server::write_to_fd(int fd, std::string message)
 			FD_CLR(fd, &active_set);
 			close(fd);
 		}
-		else if (errno == EBADF)
+	}
+}
+
+void Server::inform_about_disconnected_user(BufferContent& buffer_content)
+{
+	std::string username = usernames.at(buffer_content.get_file_descriptor());
+	std::cout << username <<  " has left" << std::endl;
+	buffer_content.set_body(username + " has left the chat");
+	send_to_all(buffer_content);
+	usernames.erase(buffer_content.get_file_descriptor());
+	remove_from_set(username);
+}
+
+void Server::disconnect_user(BufferContent& buffer_content)
+{	
+	int fd = buffer_content.get_file_descriptor();
+	if (user_exists(fd))
+	{
+		inform_about_disconnected_user(buffer_content);
+	}
+	FD_CLR(fd, &active_set);
+	close(fd);
+}
+
+void Server::select_wrapper(fd_set& set)
+{
+	if (select(max_file_descriptor + 1, &set, NULL, NULL, NULL) < 0)
+	{
+		printf("ERRNO: %d\n", errno);
+		if (errno == EBADF || errno == EAGAIN)
 		{
 			printf("Bad file descriptor\n");
 		}
+	}
+}
+
+void Server::service_udp_request(int fd)
+{
+	char buffer[MAX_BUFFER_SIZE];
+	memset(buffer, 0, MAX_BUFFER_SIZE);
+	struct sockaddr_in udp_sender;
+	socklen_t sender_length = sizeof(udp_sender);
+	int read_bytes = recvfrom(udp_port.first, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*) &udp_sender, &sender_length);
+	if (read_bytes > 0)
+	{
+		std::string servers = listservers();
+		int n = sendto(fd, servers.c_str(), servers.length(), 0, (struct sockaddr*) &udp_sender, sizeof(udp_sender));
+		if (n < 0)
+		{
+			printf("Cannot send list of servers\n");
+		}
+	}
+}
+
+void Server::service_tcp_server_request(int fd)
+{
+	struct sockaddr_in address;
+	int server_fd = accept_connection(fd, address);
+	accept_incomming_server(server_fd, address);
+}
+
+void Server::service_tcp_client_request(int fd)
+{
+	struct sockaddr_in address;
+	int client_fd = accept_connection(fd, address);
+	std::string welcome_message = "Welcome, type HELP for available commands\n";
+	write_to_fd(client_fd, welcome_message);
+	FD_SET(client_fd, &active_set);
+	update_max_fd(client_fd);
+}
+
+void Server::receive_from_client_or_server(int fd)
+{
+	char buffer[MAX_BUFFER_SIZE];
+	memset(buffer, 0, MAX_BUFFER_SIZE);
+	int read_bytes = recv(fd, buffer, MAX_BUFFER_SIZE, 0);
+	if (read_bytes < 0)
+	{
+		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
+		{
+			printf("silently dropping client connection\n");
+			FD_CLR(fd, &active_set);
+			close(fd);
+		}
+	}
+	/* client disconnects friendly without using the LEAVE command*/
+	else if (read_bytes == 0)
+	{
+		BufferContent buffer_content;
+		std::string feedback_message;
+		buffer_content.set_file_descriptor(fd);
+		disconnect_user(buffer_content);
+	}
+	else 
+	{
+		parse_buffer(buffer, fd);
 	}
 }
 
@@ -408,18 +489,7 @@ void Server::execute_command(BufferContent& buffer_content)
 
 	else if ((!command.compare("LEAVE"))) 
 	{
-		if (user_exists(fd))
-		{
-			std::string username = usernames.at(fd);
-			std::cout << username <<  " has left" << std::endl;
-			buffer_content.set_body(username + " has left the chat\n");
-			send_to_all(buffer_content);
-			usernames.erase(fd);
-			remove_from_set(username);
-
-		}
-		FD_CLR(fd, &active_set);
-		close(fd);
+		disconnect_user(buffer_content);
 	}
 
 	else if ((!command.compare("WHO"))) 
@@ -468,7 +538,7 @@ void Server::execute_command(BufferContent& buffer_content)
 		else 
 		{
 			feedback_message = "You need to be logged in\n";
-			write(fd, feedback_message.c_str(), feedback_message.length());
+			write_to_fd(fd, feedback_message);
 		}
 	
 	}
@@ -535,7 +605,6 @@ void Server::parse_buffer(char * buffer, int fd)
 int Server::run()
 {
 	/* buffer for messages */
-	char buffer[MAX_BUFFER_SIZE];
 	printf("Listening for client connections on port %d\n", ntohs(client_conn_port.second.sin_port));
 	printf("Listening for server connections on port %d\n", ntohs(server_conn_port.second.sin_port));
 	printf("Listening for udp connections on port %d\n", ntohs(udp_port.second.sin_port));
@@ -546,18 +615,8 @@ int Server::run()
 		fd_set read_set = active_set;
 
 		/* wait for incomming connections */
-		if (select(max_file_descriptor + 1, &read_set, NULL, NULL, NULL) < 0)
-		{
-			if (errno == EBADF || errno == EAGAIN)
-			{
-				printf("Bad file descriptor\n");
-			}
-			else
-			{
-				socket_utilities::error("select failed");
-			}
-		}
 
+		select_wrapper(read_set);
 
 		/* Loop from 0 to max FD to act on any read ready file descriptor */
 		for (int i = 0; i <= max_file_descriptor; i++)
@@ -567,71 +626,22 @@ int Server::run()
 				// If a connection is opened on the UDP port.
 				if (i == udp_port.first)
 				{
-					memset(buffer, 0, MAX_BUFFER_SIZE);
-					struct sockaddr_in udp_sender;
-					socklen_t sender_length = sizeof(udp_sender);
-					int read_bytes = recvfrom(udp_port.first, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*) &udp_sender, &sender_length);
-					if (read_bytes > 0)
-					{
-						listservers(udp_sender, i);
-					}
+					service_udp_request(i);
 				}
 				// If a connection is open on the server port
 				else if (i == server_conn_port.first)
 				{
-					struct sockaddr_in address;
-					printf("Incomming server connection\n");
-					int server_fd = accept_connection(i, address);
-					accept_incomming_server(server_fd, address);
-		
+					service_tcp_server_request(i);
 				}
 				// If a connection is open on the client port
 				else if (i == client_conn_port.first)
 				{
-					struct sockaddr_in address;
-					int client_fd = accept_connection(i, address);
-					std::string welcome_message = "Welcome, type HELP for available commands\n";
-					write_to_fd(client_fd, welcome_message);
-					FD_SET(client_fd, &active_set);
-					update_max_fd(client_fd);
+					service_tcp_client_request(i);
 				}
-				/* i is some already connected client that has send a message */
+				/* i is some already connected client/server that has send a message */
 				else 
 				{
-					memset(buffer, 0, MAX_BUFFER_SIZE);
-					int read_bytes = recv(i, buffer, MAX_BUFFER_SIZE, 0);
-					if (read_bytes < 0)
-					{
-						if (!(errno == EWOULDBLOCK || errno == EAGAIN))
-						{
-							printf("silently dropping client connection\n");
-							FD_CLR(i, &active_set);
-							close(i);
-						}
-					}
-					/* client disconnects friendly without using the LEAVE command*/
-					else if (read_bytes == 0)
-					{
-						BufferContent buffer_content;
-						std::string feedback_message;
-						buffer_content.set_file_descriptor(i);
-						
-						if (user_exists(i))
-						{
-							std::string username = usernames.at(i);
-							std::cout << username <<  " has left" << std::endl;
-							buffer_content.set_body(username + " has left the chat");
-							send_to_all(buffer_content);
-							usernames.erase(i);
-							remove_from_set(username);
-						}
-						FD_CLR(i, &active_set);
-						close(i);
-					}
-					else 
-					{
-						parse_buffer(buffer, i);
-					}
+					receive_from_client_or_server(i);
 				}
 
 			}
