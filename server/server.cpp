@@ -80,8 +80,6 @@ int Server::accept_connection(int fd, struct sockaddr_in& address)
 
 void Server::add_to_serverlist(int fd, struct sockaddr_in& address, std::string server_id)
 {
-	FD_SET(fd, &active_set);
-	update_max_fd(fd);
 	std::stringstream ss;
 	ss << ntohs(address.sin_port);
 	std::string value = server_id + "," + std::string(inet_ntoa(address.sin_addr)) + "," + ss.str() + ";";
@@ -89,31 +87,52 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, std::string 
 	neighbour_connections++;
 }
 
-/**
- * Accept incomming server connection
-*/
-void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
+std::string Server::retreive_id(int fd)
 {
 	int n;
 	char buffer[32];
 	memset(buffer, 0, 32);
 	std::string server_id = "anonymous_server";
+	std::string ID = "ID";
+	write_to_fd(fd, ID);
+	n = recv(fd, buffer, 32, 0);
+	if (n > 0)
+	{
+		string_utilities::trim_cstr(buffer);
+		server_id = std::string(buffer);
+		if(!server_id.compare("ID"))
+		{
+			write_to_fd(fd, get_id());
+			memset(buffer, 0, 32);
+			n = recv(fd, buffer, 32, 0);
+			if (n > 0)
+			{
+				string_utilities::trim_cstr(buffer);
+				server_id = std::string(buffer);
+			}
+		}
+	}
+	return server_id;
+}
+
+/**
+ * Accept incomming server connection
+*/
+void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
+{
+	// int n;
+	// char buffer[32];
+	// memset(buffer, 0, 32);
+	// std::string server_id = "anonymous_server";
 	if(neighbour_connections < MAX_NEIGHBOUR_CONNECTIONS)
 	{
 		// send ID to incomming server
-		write_to_fd(fd, get_id());
-		// receive ID from incomming server
-		n = recv(fd, buffer, 32, 0);
-		if (n <= 0)
-		{
-			printf("Server does not answer with an ID\n");
-		}
-		else
-		{
-			string_utilities::trim_cstr(buffer);
-			server_id = std::string(buffer);
-		}
+		FD_SET(fd, &active_set);
+		update_max_fd(fd);
+		std::string server_id = retreive_id(fd);
+		// std::string server_id = "incomming_id";
 		add_to_serverlist(fd, address, server_id);
+		std::cout << "accept_incomming_connections: " << server_id << std::endl;
 	}
 	else 
 	{
@@ -131,9 +150,6 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 void Server::connect_to_server(std::string host, int port)
 {
 	int n;
-	char buffer[32];
-	memset(buffer, 0, 32);
-	std::string server_id = "anonymous_server";
 
 	// create FD for new connection
 	int fd = socket_utilities::create_tcp_socket(false);
@@ -143,32 +159,22 @@ void Server::connect_to_server(std::string host, int port)
 	address.sin_family = AF_INET;
 	address.sin_port = htons(port);
 	memcpy((char*)&address.sin_addr.s_addr, (char*) h->h_addr, h->h_length);
-	
 	// connect
 	n = connect(fd, (struct sockaddr*) &address, sizeof(address));
-	
-	//send server ID to connected server
 	if (n < 0)
 	{
 		printf("failed to connect to %s:%d\n", host.c_str(), port);
 		close(fd);
 		return;
 	}
-	write_to_fd(fd, get_id());
+	FD_SET(fd, &active_set);
+	update_max_fd(fd);
 	printf("successfully connected to server %s:%d with fd %d\n", host.c_str(), port, fd);
-	
 	// receive ID from connected server
-	n = recv(fd, buffer, 32, 0);
-	if (n <= 0)
-	{
-		printf("Server does not answer with an ID\n");
-	}
-	else
-	{
-		string_utilities::trim_cstr(buffer);
-		server_id = std::string(buffer);
-	}
+	std::string server_id = retreive_id(fd);
 	add_to_serverlist(fd, address, server_id);
+	std::cout << "connect_to_server: " << server_id << std::endl;
+
 }
 
 
@@ -313,6 +319,15 @@ bool Server::user_exists(int fd)
 	return false;
 }
 
+bool Server::is_server(int fd)
+{
+	if(neighbours.count(fd) == 1)
+	{
+		return true;
+	}
+	return false;
+}
+
 /**
  * Get a file descriptor by username
 */
@@ -435,6 +450,10 @@ void Server::receive_from_client_or_server(int fd)
 	}
 	else 
 	{
+		if (is_server(fd))
+		{
+			printf("Buffer is from another server\n");
+		}
 		parse_buffer(buffer, fd);
 	}
 }

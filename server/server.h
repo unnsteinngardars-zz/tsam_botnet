@@ -63,6 +63,7 @@ class Server
 	/* helper methods */
 	int get_fd_by_user(std::string username);
 	bool user_exists(int fd);
+	bool is_server(int fd);
 	void write_to_fd(int fd, std::string message);
 	void remove_from_set(std::string username);
 	void update_max_fd(int fd);
@@ -78,6 +79,7 @@ class Server
 	void service_tcp_server_request(int fd);
 	void service_tcp_client_request(int fd);
 	void receive_from_client_or_server(int fd);
+	std::string retreive_id(int fd);
   public:
 	Server(int server_p, int client_p, int udp_p);
 	int run();
