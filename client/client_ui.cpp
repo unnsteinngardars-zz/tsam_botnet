@@ -99,6 +99,8 @@ int ClientUI::CheckMessages()
                     if(!_msg.empty())
                     {
                         _c.SendMessage(_c.GetSocket(), _msg);
+                        _command_history.insert(_command_history.begin(), _msg);
+                        _cmd_index = -1;
                     }
                     if(_msg == "LEAVE")
                     {
@@ -108,6 +110,19 @@ int ClientUI::CheckMessages()
                     }
                     _msg = "";
                     break;
+                case KEY_UP:
+                    //go up a command (into the past)
+                    _cmd_index = min(_cmd_index + 1, (int)_command_history.size()-1);
+                    _msg = _command_history[_cmd_index];
+                break;
+                case KEY_DOWN:
+                    //go down a command (into the future)
+                    _cmd_index = max(_cmd_index - 1, -1);
+                    if(_cmd_index == -1)
+                        _msg = "";
+                    else
+                        _msg = _command_history[_cmd_index];
+                break;
                 default:
                     if(isalpha(c) || c == ' ' || isdigit(c) || ispunct(c))
                     {
@@ -273,6 +288,7 @@ void ClientUI::Start()
     signal(SIGPIPE, SIG_IGN);   //ignore sigpipe (protocol some times throws a fit)
 
     //Setup some values for our new window
+    _cmd_index = -1;
     _width = COLS - 2;
     _height = LINES - 2;
     int startx = (COLS - _width)   / 2;
@@ -312,25 +328,26 @@ void ClientUI::Start()
         {
             ports.push_back(stoi(i));
         }
+        
         _messages.insert(_messages.begin(), "Attempting to connect...");
         if(ports.size() == 1)
             _c = Client(host, ports[0]);
         else
             _c = Client(host, ports);
-        //_c = Client("127.0.0.1", {31339, 31337, 31338});
+
         int connected = _c.StartClient();
         if(connected == 0)
         {
             leave = CheckMessages();
             _messages.insert(_messages.begin(), "Disconnected.");
             _messages.insert(_messages.begin(), "Type quit or press CTRL-C to exit");
-            
         }
         else
         {
             _messages.insert(_messages.begin(), "Failed to connect. Please try again");
         }
-    }while(leave > 0);
+    }
+    while(leave > 0);
 }
 
 std::vector<std::string> ClientUI::explode(std::string const & s, char delim)
