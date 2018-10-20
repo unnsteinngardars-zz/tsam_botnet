@@ -119,7 +119,7 @@ class MessageProtocol
             */
         }
         private:
-            int BUFFER_LENGTH = 1024;
+            int BUFFER_LENGTH = 8000;
 };
 
 #endif
