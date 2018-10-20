@@ -103,11 +103,12 @@ int ClientUI::CheckMessages()
                     {
                         _c.SendMessage(_c.GetSocket(), _msg);
                     }
-                    if(_msg == "/leave")
+                    if(_msg == "LEAVE")
                     {
                         close(_c.GetSocket());
-                        return 0;
-                    } 
+                        _msg = "";
+                        return 1;
+                    }
                     _msg = "";
                     break;
                 default:
@@ -128,9 +129,9 @@ int ClientUI::CheckMessages()
     }
 }
 
-string ClientUI::GetServerInfo()
+string ClientUI::GetServerInfo(string old_info)
 {
-    string con_info = "";
+    string con_info = old_info;
     
     RenderUI(con_info);
     while(true)
@@ -299,8 +300,8 @@ void ClientUI::Start()
     do
     {
         //Poll the user for some server info
-        connection_info = GetServerInfo();
-
+        connection_info = GetServerInfo(connection_info);
+        if(connection_info == "quit") break;
         //Get our input in a nicer format
         exploded = explode(connection_info, ' ');
         
@@ -319,10 +320,13 @@ void ClientUI::Start()
         if(connected == 0)
         {
             leave = CheckMessages();
+            _messages.insert(_messages.begin(), "Disconnected.");
+            _messages.insert(_messages.begin(), "Type quit or press CTRL-C to exit");
+            
         }
         else
         {
-            _messages.push_back("Failed to connect. Please try again");
+            _messages.insert(_messages.begin(), "Failed to connect. Please try again");
         }
     }while(leave > 0);
 }

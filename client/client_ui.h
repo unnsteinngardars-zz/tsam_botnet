@@ -20,7 +20,7 @@ class ClientUI
         void UpdateNames();
         bool StartsWithCaseInsensitive(std::string mainStr, std::string toMatch);
         std::vector<std::string> explode(std::string const & s, char delim);
-        std::string GetServerInfo();
+        std::string GetServerInfo(std::string old_info);
 
         std::string _msg;
         vector<std::string> _messages;
