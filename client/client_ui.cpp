@@ -40,6 +40,7 @@ using namespace std;
 
 #define PADDINGTON_Y INPUT_AREA_START_Y - BORDER_SIZE
 #define PADDINGTON_X BORDER_SIZE
+
 /*
 **************
 *        *usr*
@@ -56,8 +57,6 @@ ClientUI::ClientUI()
     _c = Client("127.0.0.1", 31338);
     //cout << "connected to server" << endl;
 }
-
-
 
 int ClientUI::CheckMessages()
 {
@@ -88,9 +87,7 @@ int ClientUI::CheckMessages()
                     if(s.size() > 0)
                         _messages.insert(_messages.begin(), s);
                 }
-                    
             }
-                
         }
         if(FD_ISSET(stdin_sock, &readfds))
         {
@@ -301,6 +298,8 @@ void ClientUI::Start()
     {
         //Poll the user for some server info
         connection_info = GetServerInfo(connection_info);
+        
+        std::transform(connection_info.begin(), connection_info.end(), connection_info.begin(), ::tolower);
         if(connection_info == "quit") break;
         //Get our input in a nicer format
         exploded = explode(connection_info, ' ');
@@ -314,7 +313,10 @@ void ClientUI::Start()
             ports.push_back(stoi(i));
         }
         _messages.insert(_messages.begin(), "Attempting to connect...");
-        _c = Client(host, ports);
+        if(ports.size() == 1)
+            _c = Client(host, ports[0]);
+        else
+            _c = Client(host, ports);
         //_c = Client("127.0.0.1", {31339, 31337, 31338});
         int connected = _c.StartClient();
         if(connected == 0)

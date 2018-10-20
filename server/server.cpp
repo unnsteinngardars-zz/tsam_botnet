@@ -266,7 +266,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 		/* Check if the client is in the active set */
 		if (FD_ISSET(i, &active_set))
 		{
-			if (i != server_conn_port.first && i != client_conn_port.first && i != udp_port.first && i != fd)
+			if (i != server_conn_port.first && i != client_conn_port.first && i != udp_port.first)
 			{
 				write_to_fd(i, body);
 			}
