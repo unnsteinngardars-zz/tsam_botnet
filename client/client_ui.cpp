@@ -148,7 +148,7 @@ string ClientUI::GetServerInfo(string old_info)
     RenderUI(con_info);
     while(true)
     {
-        switch(int c = getch())
+        switch(int c = wgetch(_curse_window))
         {
             case ERR: break;
             case 10 : //enter
