@@ -13,7 +13,7 @@ int main(int argc, char const *argv[])
 	}
 	
 	Server server = Server(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]));
-	server.set_max_buffer(1024);
+	server.set_max_buffer(8000);
 	server.run();
 
 	// server.set_scan_destination("localhost");

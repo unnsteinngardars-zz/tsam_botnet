@@ -46,6 +46,9 @@ class Server
 	int MAX_BUFFER_SIZE;
 	int MAX_NEIGHBOUR_CONNECTIONS;
 	int max_file_descriptor;
+
+	std::string SOH = "\x01";
+	std::string EOT = "\x04";
 	
 	/* Methods */
 	/* getters/setters */

@@ -87,26 +87,31 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, std::string 
 	neighbour_connections++;
 }
 
+/**
+ * Unstable method, attempt to retrieve ID both when connecting and when getting connected to
+*/
 std::string Server::retreive_id(int fd)
 {
 	int n;
 	char buffer[32];
 	memset(buffer, 0, 32);
 	std::string server_id = "anonymous_server";
-	std::string ID = "ID";
+	std::string ID = SOH + "ID" + EOT;
+	// std::string ID = "ID";
 	write_to_fd(fd, ID);
 	n = recv(fd, buffer, 32, 0);
 	if (n > 0)
 	{
 		string_utilities::trim_cstr(buffer);
 		server_id = std::string(buffer);
-		if(!server_id.compare("ID"))
+		if(!server_id.compare(ID))
 		{
 			write_to_fd(fd, get_id());
 			memset(buffer, 0, 32);
 			n = recv(fd, buffer, 32, 0);
 			if (n > 0)
-			{
+			{	
+				printf("buffer received: %s\n", buffer);
 				string_utilities::trim_cstr(buffer);
 				server_id = std::string(buffer);
 			}
@@ -120,17 +125,13 @@ std::string Server::retreive_id(int fd)
 */
 void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 {
-	// int n;
-	// char buffer[32];
-	// memset(buffer, 0, 32);
-	// std::string server_id = "anonymous_server";
 	if(neighbour_connections < MAX_NEIGHBOUR_CONNECTIONS)
 	{
 		// send ID to incomming server
 		FD_SET(fd, &active_set);
 		update_max_fd(fd);
-		std::string server_id = retreive_id(fd);
-		// std::string server_id = "incomming_id";
+		std::string server_id = "anonymous";
+		// std::string server_id = retreive_id(fd);
 		add_to_serverlist(fd, address, server_id);
 		std::cout << "accept_incomming_connections: " << server_id << std::endl;
 	}
@@ -150,7 +151,6 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 void Server::connect_to_server(std::string host, int port)
 {
 	int n;
-
 	// create FD for new connection
 	int fd = socket_utilities::create_tcp_socket(false);
 	struct sockaddr_in address;
@@ -170,8 +170,8 @@ void Server::connect_to_server(std::string host, int port)
 	FD_SET(fd, &active_set);
 	update_max_fd(fd);
 	printf("successfully connected to server %s:%d with fd %d\n", host.c_str(), port, fd);
-	// receive ID from connected server
-	std::string server_id = retreive_id(fd);
+	std::string server_id = "anonymous";
+	// std::string server_id = retreive_id(fd);
 	add_to_serverlist(fd, address, server_id);
 	std::cout << "connect_to_server: " << server_id << std::endl;
 
@@ -452,9 +452,13 @@ void Server::receive_from_client_or_server(int fd)
 	{
 		if (is_server(fd))
 		{
-			printf("Buffer is from another server\n");
+			printf("sizeof buffer: %d\n", sizeof(buffer));
+			printf("Buffer %s is from another server\n", buffer);
 		}
-		parse_buffer(buffer, fd);
+		// ELSE ONLY FOR DEBUGGING PURPOSES
+		else{
+			parse_buffer(buffer, fd);
+		}
 	}
 }
 
