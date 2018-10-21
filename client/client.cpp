@@ -14,13 +14,20 @@ Client::Client(string host, int port)
 {
     _host_str = host;
     _port = port;
+    _port_knock_mode = false;
 }
 
 Client::Client(string host, vector<int> ports)
 {
     _host_str = host;
     _ports = ports;
-    _port_knock_mode = true;
+    if(ports.size() > 1)
+        _port_knock_mode = true;
+    else
+    {
+        _port_knock_mode = false;
+        _port = ports[0];
+    }
 }
 
 int Client::StartClient()
@@ -40,13 +47,16 @@ int Client::StartClient()
         serv_address.sin_family = AF_INET;
         serv_address.sin_port = htons(_port);
 
-        if(inet_pton(AF_INET, _host_str.c_str(), &serv_address.sin_addr) <= 0)
+        hostent* host = gethostbyname(_host_str.c_str());
+        memcpy((char*)&serv_address.sin_addr.s_addr, (char*) host->h_addr, host->h_length);
+	
+        /*if(inet_pton(AF_INET, host, &serv_address.sin_addr) <= 0)
         {
             //cout << "Invalid address" << endl;
             return -1;
-        }
-        
-        if(connect(_master_socket, (struct sockaddr*)&serv_address, sizeof(serv_address)) < 0)
+        }*/
+        retval = connect(_master_socket, (struct sockaddr*)&serv_address, sizeof(serv_address));
+        if(retval < 0)
         {
             //cout << "Connection failed" << endl;
             return -1;

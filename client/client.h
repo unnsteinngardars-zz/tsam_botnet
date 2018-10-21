@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <netdb.h>
 #include "../message_protocol.h"
 
 #define DEFAULT_PORT_MIN 31337

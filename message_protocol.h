@@ -43,7 +43,9 @@ class MessageProtocol
             else
                 return write_bytes;
 
-            /*HEAD_LEN len = msg.length();
+            /*
+            //Old protocol
+            HEAD_LEN len = msg.length();
             if(!fd_is_valid(to)) return -1;
 
             ssize_t len_fail = send(to, &len, sizeof(HEAD_LEN), 0);
@@ -99,6 +101,7 @@ class MessageProtocol
 
 
             /*
+            //Old protocol
             //Our header is 4bytes long, describing the length of the message that follows
             HEAD_LEN msg_len;
             char* c = ReadCount(socket, sizeof(msg_len));
@@ -116,7 +119,7 @@ class MessageProtocol
             */
         }
         private:
-            int BUFFER_LENGTH = 1024;
+            int BUFFER_LENGTH = 8000;
 };
 
 #endif

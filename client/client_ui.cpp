@@ -24,22 +24,23 @@ using namespace std;
 #define SCREEN_HEIGHT (LINES - 2)
 
 #define INPUT_AREA_START_X BORDER_SIZE
-#define INPUT_AREA_START_Y SCREEN_HEIGHT - BORDER_SIZE*2
+#define INPUT_AREA_START_Y (SCREEN_HEIGHT - BORDER_SIZE*2)
 #define INPUT_AREA_HEIGHT 1
-#define INPUT_AREA_WIDTH SCREEN_WIDTH - BORDER_SIZE*2
+#define INPUT_AREA_WIDTH (SCREEN_WIDTH - BORDER_SIZE*2)
 
-#define USER_AREA_WIDTH 10 + BORDER_SIZE*2
-#define USER_AREA_HEIGHT SCREEN_HEIGHT - INPUT_AREA_HEIGHT - BORDER_SIZE * 2
-#define USER_AREA_START_X SCREEN_WIDTH - USER_AREA_WIDTH - BORDER_SIZE * 2
+#define USER_AREA_WIDTH (10 + BORDER_SIZE*2)
+#define USER_AREA_HEIGHT (SCREEN_HEIGHT - INPUT_AREA_HEIGHT - BORDER_SIZE * 2)
+#define USER_AREA_START_X (SCREEN_WIDTH - USER_AREA_WIDTH - BORDER_SIZE * 2)
 #define USER_AREA_START_Y 1
 
-#define MESSAGE_AREA_START_X BORDER_SIZE
+#define MESSAGE_AREA_START_X (BORDER_SIZE)
 #define MESSAGE_AREA_START_Y (INPUT_AREA_START_Y - INPUT_AREA_HEIGHT - BORDER_SIZE)
-#define MESSAGE_AREA_WIDTH SCREEN_WIDTH - USER_AREA_WIDTH - BORDER_SIZE * 2
-#define MESSAGE_AREA_HEIGHT USER_AREA_HEIGHT
+#define MESSAGE_AREA_WIDTH (SCREEN_WIDTH - USER_AREA_WIDTH - BORDER_SIZE * 2)
+#define MESSAGE_AREA_HEIGHT (USER_AREA_HEIGHT)
 
-#define PADDINGTON_Y INPUT_AREA_START_Y - BORDER_SIZE
-#define PADDINGTON_X BORDER_SIZE
+#define PADDINGTON_Y (INPUT_AREA_START_Y - BORDER_SIZE)
+#define PADDINGTON_X (BORDER_SIZE)
+
 /*
 **************
 *        *usr*
@@ -56,8 +57,6 @@ ClientUI::ClientUI()
     _c = Client("127.0.0.1", 31338);
     //cout << "connected to server" << endl;
 }
-
-
 
 int ClientUI::CheckMessages()
 {
@@ -88,9 +87,7 @@ int ClientUI::CheckMessages()
                     if(s.size() > 0)
                         _messages.insert(_messages.begin(), s);
                 }
-                    
             }
-                
         }
         if(FD_ISSET(stdin_sock, &readfds))
         {
@@ -102,6 +99,8 @@ int ClientUI::CheckMessages()
                     if(!_msg.empty())
                     {
                         _c.SendMessage(_c.GetSocket(), _msg);
+                        _command_history.insert(_command_history.begin(), _msg);
+                        _cmd_index = -1;
                     }
                     if(_msg == "LEAVE")
                     {
@@ -111,6 +110,19 @@ int ClientUI::CheckMessages()
                     }
                     _msg = "";
                     break;
+                case KEY_UP:
+                    //go up a command (into the past)
+                    _cmd_index = min(_cmd_index + 1, (int)_command_history.size()-1);
+                    _msg = _command_history[_cmd_index];
+                break;
+                case KEY_DOWN:
+                    //go down a command (into the future)
+                    _cmd_index = max(_cmd_index - 1, -1);
+                    if(_cmd_index == -1)
+                        _msg = "";
+                    else
+                        _msg = _command_history[_cmd_index];
+                break;
                 default:
                     if(isalpha(c) || c == ' ' || isdigit(c) || ispunct(c))
                     {
@@ -136,7 +148,7 @@ string ClientUI::GetServerInfo(string old_info)
     RenderUI(con_info);
     while(true)
     {
-        switch(int c = getch())
+        switch(int c = wgetch(_curse_window))
         {
             case ERR: break;
             case 10 : //enter
@@ -237,7 +249,7 @@ void ClientUI::RenderUI(string str)
     //don't overwrite the old border; start just above the input area
     PrintLineAt(PADDINGTON_X, PADDINGTON_Y, _paddington);
 
-    size_t len = _messages.size();
+    size_t len = min(_messages.size(), (size_t)MESSAGE_AREA_HEIGHT - 1);
     for(size_t i = 0; i < len; i++)
     {
         int msg_y = MESSAGE_AREA_START_Y - i;
@@ -276,6 +288,7 @@ void ClientUI::Start()
     signal(SIGPIPE, SIG_IGN);   //ignore sigpipe (protocol some times throws a fit)
 
     //Setup some values for our new window
+    _cmd_index = -1;
     _width = COLS - 2;
     _height = LINES - 2;
     int startx = (COLS - _width)   / 2;
@@ -301,6 +314,8 @@ void ClientUI::Start()
     {
         //Poll the user for some server info
         connection_info = GetServerInfo(connection_info);
+        
+        std::transform(connection_info.begin(), connection_info.end(), connection_info.begin(), ::tolower);
         if(connection_info == "quit") break;
         //Get our input in a nicer format
         exploded = explode(connection_info, ' ');
@@ -313,22 +328,26 @@ void ClientUI::Start()
         {
             ports.push_back(stoi(i));
         }
+        
         _messages.insert(_messages.begin(), "Attempting to connect...");
-        _c = Client(host, ports);
-        //_c = Client("127.0.0.1", {31339, 31337, 31338});
+        if(ports.size() == 1)
+            _c = Client(host, ports[0]);
+        else
+            _c = Client(host, ports);
+
         int connected = _c.StartClient();
         if(connected == 0)
         {
             leave = CheckMessages();
             _messages.insert(_messages.begin(), "Disconnected.");
             _messages.insert(_messages.begin(), "Type quit or press CTRL-C to exit");
-            
         }
         else
         {
             _messages.insert(_messages.begin(), "Failed to connect. Please try again");
         }
-    }while(leave > 0);
+    }
+    while(leave > 0);
 }
 
 std::vector<std::string> ClientUI::explode(std::string const & s, char delim)

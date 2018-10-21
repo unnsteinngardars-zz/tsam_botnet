@@ -23,6 +23,8 @@ class ClientUI
         std::string GetServerInfo(std::string old_info);
 
         std::string _msg;
+        vector<std::string> _command_history;
+        int _cmd_index;
         vector<std::string> _messages;
         vector<std::string> _users;
         Client _c;
