@@ -47,7 +47,7 @@ std::vector<std::string> string_utilities::split_into_commands_and_body(std::str
 	int counter = 0;
 	std::string str;
 	std::vector<std::string> vec;
-	std::string delimeter = " ";
+	std::string delimeter = ",";
 	
 	while (((pos = input_string.find(delimeter)) != std::string::npos) && counter < 2)
 	{
@@ -58,4 +58,23 @@ std::vector<std::string> string_utilities::split_into_commands_and_body(std::str
 	}
 	vec.push_back(input_string);
 	return vec;
+}
+
+/**
+ * https://stackoverflow.com/questions/4654636/how-to-determine-if-a-string-is-a-number-with-c
+*/
+bool string_utilities::is_number(std::string str)
+{
+	return !str.empty() && std::find_if(str.begin(), 
+	str.end(), [](char c) { return !std::isdigit(c); }) == str.end();
+}
+
+std::string string_utilities::wrap_with_tokens(std::string str)
+{
+	char SOH = 1;
+	char EOT = 4;
+	std::string new_string = " " + str + " ";
+	new_string[0] = SOH;
+	new_string[new_string.size() - 1] = EOT;
+	return new_string;
 }

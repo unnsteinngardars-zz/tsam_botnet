@@ -6,13 +6,13 @@
 int main(int argc, char const *argv[])
 {	
 
-	if (argc < 4)
+	if (argc < 5)
 	{
-		printf("%s <server_connection_port> <client_connection_port> <udp_port>\n", argv[0]);
+		printf("%s <server_connection_port> <client_connection_port> <udp_port> <server_id>\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 	
-	Server server = Server(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]));
+	Server server = Server(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), std::string(argv[4]));
 	server.set_max_buffer(8000);
 	server.run();
 

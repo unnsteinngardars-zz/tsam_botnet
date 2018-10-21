@@ -3,10 +3,10 @@
 /**
  * Initialize a Server with fortune
 */
-Server::Server(int server_p, int client_p, int udp_p)
+Server::Server(int server_p, int client_p, int udp_p, std::string server_id)
 {
 
-	id = "tsamgroup33"; // might later take in argv[0] from main and assign
+	id = server_id; // might later take in argv[0] from main and assign
 	FD_ZERO(&active_set);
 	struct sockaddr_in s;
 	struct sockaddr_in c;
@@ -83,49 +83,30 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, std::string 
 	std::stringstream ss;
 	ss << ntohs(address.sin_port);
 	std::string value = server_id + "," + std::string(inet_ntoa(address.sin_addr)) + "," + ss.str() + ";";
-	neighbours.insert(Pair(fd, value));
-	neighbour_connections++;
+	neighbors_by_fd.insert(Pair(fd, value));
+	std::pair<std::string, int> conn_info_pair;
+	// conn_info_pair.first = std::string(inet_ntoa(address.sin_addr)) + "," + ss.str();
+	// conn_info_pair.second = fd;
+	// neighbors_by_conninfo.insert(conn_info_pair);
+	neighbor_connections++;
 }
 
-/**
- * Unstable method, attempt to retrieve ID both when connecting and when getting connected to
-*/
-std::string Server::retreive_id(int fd)
+void Server::update_server_id(int fd)
 {
-	int n;
-	char buffer[32];
-	memset(buffer, 0, 32);
-	std::string server_id = "anonymous_server";
-	std::string ID = SOH + "ID" + EOT;
-	// std::string ID = "ID";
-	write_to_fd(fd, ID);
-	n = recv(fd, buffer, 32, 0);
-	if (n > 0)
+	for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
 	{
-		string_utilities::trim_cstr(buffer);
-		server_id = std::string(buffer);
-		if(!server_id.compare(ID))
-		{
-			write_to_fd(fd, get_id());
-			memset(buffer, 0, 32);
-			n = recv(fd, buffer, 32, 0);
-			if (n > 0)
-			{	
-				printf("buffer received: %s\n", buffer);
-				string_utilities::trim_cstr(buffer);
-				server_id = std::string(buffer);
-			}
-		}
+
 	}
-	return server_id;
 }
+
 
 /**
  * Accept incomming server connection
 */
 void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 {
-	if(neighbour_connections < MAX_NEIGHBOUR_CONNECTIONS)
+
+	if(neighbor_connections < MAX_NEIGHBOUR_CONNECTIONS)
 	{
 		// send ID to incomming server
 		FD_SET(fd, &active_set);
@@ -138,21 +119,47 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 	else 
 	{
 		std::string message = "Server has maximized allowed connections\n";
-		printf("closing connection on fd: %d\n", fd);
 		write_to_fd(fd, message);
 		FD_CLR(fd, &active_set);
 		close(fd);
 	}
 }
 
+
+
 /**
  * Connect to a server
 */
-void Server::connect_to_server(std::string host, int port)
+void Server::connect_to_server(BufferContent& buffer_content)
 {
-	int n;
+
+	if (neighbor_connections == MAX_NEIGHBOUR_CONNECTIONS)
+	{
+		printf("Server has reached maximum neighbor threshold\n");
+		return;
+	}
+
+	int n, fd;
+	char buffer[32];
+	memset(buffer, 0, 32);
+	std::string server_id = "anonymous";
+	std::string sub_command = buffer_content.get_sub_command();
+	std::vector<std::string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
+
+	if (host_and_port.size() < 2) { return; }
+	if (!string_utilities::is_number(host_and_port.at(1))) { return; }
+
+	std::string host = host_and_port.at(0);
+	int port = stoi(host_and_port.at(1));
+
+	if (port == ntohs(server_conn_port.second.sin_port))
+	{
+		printf("Cannot connect to oneself mate :)\n");
+		return;
+	}
+
 	// create FD for new connection
-	int fd = socket_utilities::create_tcp_socket(false);
+	fd = socket_utilities::create_tcp_socket(false);
 	struct sockaddr_in address;
 	struct hostent* h;
 	h = gethostbyname(host.c_str());
@@ -163,15 +170,27 @@ void Server::connect_to_server(std::string host, int port)
 	n = connect(fd, (struct sockaddr*) &address, sizeof(address));
 	if (n < 0)
 	{
-		printf("failed to connect to %s:%d\n", host.c_str(), port);
+		printf("failed to establish connection to %s:%d\n", host.c_str(), port);
 		close(fd);
 		return;
 	}
 	FD_SET(fd, &active_set);
 	update_max_fd(fd);
-	printf("successfully connected to server %s:%d with fd %d\n", host.c_str(), port, fd);
-	std::string server_id = "anonymous";
-	// std::string server_id = retreive_id(fd);
+
+	printf("successfully established connection to server %s:%d with fd %d\n", host.c_str(), port, fd);
+
+	std::string request_id = "CMD,," + get_id() + ",ID";
+	request_id = string_utilities::wrap_with_tokens(request_id);
+
+	write_to_fd(fd, request_id);
+	memset(buffer, 0, 32);
+	n = recv(fd, buffer, 32, 0);
+	if (n > 0)
+	{
+		string_utilities::trim_cstr(buffer);
+		server_id = std::string(buffer);
+	}
+
 	add_to_serverlist(fd, address, server_id);
 	std::cout << "connect_to_server: " << server_id << std::endl;
 
@@ -216,14 +235,14 @@ void Server::display_users(BufferContent& buffer_content)
 std::string Server::listservers()
 {
 	std::string servers;
-	if (neighbours.empty())
+	if (neighbors_by_fd.empty())
 	{
 		servers = "Server " + get_id() + " has no neighbours\n";
 	}
 	else 
 	{
-		std::map<int, std::string>::iterator it;
-		for(it = neighbours.begin(); it != neighbours.end(); ++it)
+		// std::map<int, std::string>::iterator it;
+		for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
 		{
 			servers += it->second;
 		}
@@ -321,7 +340,7 @@ bool Server::user_exists(int fd)
 
 bool Server::is_server(int fd)
 {
-	if(neighbours.count(fd) == 1)
+	if(neighbors_by_fd.count(fd) == 1)
 	{
 		return true;
 	}
@@ -358,22 +377,18 @@ void Server::write_to_fd(int fd, std::string message)
 	}
 }
 
-void Server::inform_about_disconnected_user(BufferContent& buffer_content)
-{
-	std::string username = usernames.at(buffer_content.get_file_descriptor());
-	std::cout << username <<  " has left" << std::endl;
-	buffer_content.set_body(username + " has left the chat");
-	send_to_all(buffer_content);
-	usernames.erase(buffer_content.get_file_descriptor());
-	remove_from_set(username);
-}
 
 void Server::disconnect_user(BufferContent& buffer_content)
 {	
 	int fd = buffer_content.get_file_descriptor();
 	if (user_exists(fd))
 	{
-		inform_about_disconnected_user(buffer_content);
+		std::string username = usernames.at(buffer_content.get_file_descriptor());
+		std::cout << username <<  " has left" << std::endl;
+		buffer_content.set_body(username + " has left the chat");
+		send_to_all(buffer_content);
+		usernames.erase(buffer_content.get_file_descriptor());
+		remove_from_set(username);
 	}
 	FD_CLR(fd, &active_set);
 	close(fd);
@@ -383,10 +398,10 @@ void Server::select_wrapper(fd_set& set)
 {
 	if (select(max_file_descriptor + 1, &set, NULL, NULL, NULL) < 0)
 	{
-		printf("ERRNO: %d\n", errno);
+		printf("Errno: %d\n", errno);
 		if (errno == EBADF || errno == EAGAIN)
 		{
-			printf("Bad file descriptor\n");
+
 		}
 	}
 }
@@ -404,7 +419,7 @@ void Server::service_udp_request(int fd)
 		int n = sendto(fd, servers.c_str(), servers.length(), 0, (struct sockaddr*) &udp_sender, sizeof(udp_sender));
 		if (n < 0)
 		{
-			printf("Cannot send list of servers\n");
+			
 		}
 	}
 }
@@ -435,7 +450,6 @@ void Server::receive_from_client_or_server(int fd)
 	{
 		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
 		{
-			printf("silently dropping client connection\n");
 			FD_CLR(fd, &active_set);
 			close(fd);
 		}
@@ -443,24 +457,73 @@ void Server::receive_from_client_or_server(int fd)
 	/* client disconnects friendly without using the LEAVE command*/
 	else if (read_bytes == 0)
 	{
-		BufferContent buffer_content;
-		std::string feedback_message;
-		buffer_content.set_file_descriptor(fd);
-		disconnect_user(buffer_content);
+		///TODO: Check if server is leaving and remove from server structures
+		if (is_server(fd))
+		{
+			// REMOVE SERVER
+			neighbors_by_fd.erase(fd);
+		}
+		else 
+		{
+			BufferContent buffer_content;
+			std::string feedback_message;
+			buffer_content.set_file_descriptor(fd);
+			disconnect_user(buffer_content);
+		}
 	}
 	else 
 	{
+		std::string buff = std::string(buffer);
 		if (is_server(fd))
 		{
-			printf("sizeof buffer: %d\n", sizeof(buffer));
-			printf("Buffer %s is from another server\n", buffer);
+			//TODO: Check for SOH and EOT tokens
+			//		Parse buffer and remove tokens
+			//		Check if CMD or RSP
+			//		If to == our_id then parse_buffer(COMMAND)
+			//		Else try to find out where to forward.
+			if (!(buff[0] == SOH) && !(buff[buff.size() - 1] == EOT))
+			{
+				return;
+			}			
+			buff = buff.substr(1, buff.size() - 2);
+			string_utilities::trim_string(buff);
 		}
-		// ELSE ONLY FOR DEBUGGING PURPOSES
-		else{
-			parse_buffer(buffer, fd);
-		}
+		parse_buffer(buff, fd);
 	}
 }
+
+//TODO: not finished, manual command to fetch ID from a server by FD
+void Server::fetch_id_from_fd(int fd)
+{
+	char buffer[32];
+	memset(buffer, 0, 32);
+	write_to_fd(fd, "ID");
+	int n = recv(fd, buffer, 32, 0);
+	if (n > 0)
+	{
+		string_utilities::trim_cstr(buffer);
+		std::string server_id = std::string(buffer);
+		// UPDATE SERVER LIST 
+		for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
+		{
+			if (it->first == fd)
+			{
+				// anonymous,127.0.0.1,4001
+				// std::string value = it->second;
+				std::vector<std::string> vec = string_utilities::split_by_delimeter(it->second, ",");
+				it->second = server_id + "," + vec.at(1) + "," + vec.at(2) + ";";
+			}
+		}
+		// update_server_list(std::string(buffer));
+	}
+
+	for(auto it = neighbors_by_fd.begin() ; it != neighbors_by_fd.end(); ++it)
+	{
+		std::cout << it->second << ", ";
+	}
+}
+
+
 
 /**
  * Execute a command
@@ -472,26 +535,99 @@ void Server::execute_command(BufferContent& buffer_content)
 	std::string feedback_message;
 	int fd = buffer_content.get_file_descriptor();
 
-	if ((!command.compare("CONNECTSERVER")))
+	std::cout << buffer_content.get_file_descriptor() << std::endl;
+	std::cout << buffer_content.get_command() << std::endl;
+	std::cout << buffer_content.get_sub_command() << std::endl;
+	std::cout << buffer_content.get_body() << std::endl;
+	/* C&C commands */
+	if ((!command.compare("CS")))
 	{
+		connect_to_server(buffer_content);
+	}
+
+	//TODO: Finish implementing manual fetch id 
+	else if (!command.compare("FETCHID"))
+	{
+		std::cout << command << std::endl;
 		sub_command = buffer_content.get_sub_command();
-		std::vector<std::string> host_and_port = string_utilities::split_by_delimeter(sub_command, ";");
-		if (host_and_port.size() > 1)
+		std::cout << sub_command << std::endl;
+		// struct hostent* h;
+		// std::vector<std::string> host_and_port = string_utilities::split_by_delimeter(sub_command, ",");
+		// if (host_and_port.size() == 2)
+		// {
+		// 	h = gethostbyname(host_and_port.at(0).c_str());
+		// 	std::cout << std::string(h->h_addr) << std::endl;
+
+		// }
+		// int fd = get_fd_by_host_and_port(string_utilities::trim_string(sub_command));
+		fetch_id_from_fd(fd);
+	}
+	
+	/* Client/Server Commands */
+	else if (!command.compare("LISTSERVERS"))
+	{
+		//TODO: Send listservers to FD
+		std::string servers = listservers();
+		write_to_fd(fd, servers);
+	}
+
+	else if (!command.compare("KEEPALIVE"))
+	{
+		//TODO: Send keepalive to FD
+	}
+	
+	else if (!command.compare("LISTROUTES"))
+	{
+		//TODO:: send routing table to FD
+	}
+
+	else if (!command.compare("FETCH"))
+	{
+		//TODO:: send Id with number matching stoi(sub_command)
+	}
+
+	else if (!command.compare("CMD"))
+	{
+		std::vector<std::string> source_and_cmd = string_utilities::split_by_delimeter(buffer_content.get_body(), ",");
+		std::string source = source_and_cmd.at(0);
+		std::string dest = buffer_content.get_sub_command();
+		std::string cmd = source_and_cmd.at(1);
+		
+		if (!(dest.compare(get_id())) || !(dest.compare("")))
 		{
-			if (neighbour_connections != MAX_NEIGHBOUR_CONNECTIONS)
-			{
-				connect_to_server(string_utilities::trim_string(host_and_port.at(0)), stoi(host_and_port.at(1)));
-			}
-			else
-			{
-				printf("Server has reached maximum neighbour threshold\n");
-			}
+			// TODO: find FD in our neighbor map and update server_id for that FD
+
+			// execute the cmd requested
+			parse_buffer(cmd, fd);
 		}
+		else
+		{
+			// TODO: Implement
+			//		 Forward command: CMD,toserver,fromserver,COMMAND
+			printf("Find best way to forward command\n");
+		}
+
+
+		
+	}
+	else if (!command.compare("RSP"))
+	{
+		//TODO: check if RSP is to go to our neighbor, then write_to_fd(neighborFD, command_response)
+		//		else make best assumption on where to forward the resposne
 	}
 
 	else if ((!command.compare("ID"))) 
 	{
-		write_to_fd(fd, id + "\n");
+		// If the receiver is a server, it shall RSP the result of the command
+		if (is_server(fd))
+		{	
+			//TODO:	Create a global variable which holds info about current to_server_id
+			//		Execute RSP,to_server_id,us,get_id()
+			//		Check if to_server_id is neighbor, else find best suitable option to forward response
+			std::string response = "RSP,";
+		}
+		else { write_to_fd(fd, id + "\n"); }
+		
 	}
 
 	else if ((!command.compare("CONNECT"))) 
@@ -565,15 +701,21 @@ void Server::execute_command(BufferContent& buffer_content)
 		}
 	
 	}
-	else if ( (!command.compare("HELP")) )
+
+	else if ((!command.compare("HELP")))
 	{
 		display_commands(buffer_content.get_file_descriptor());
 	}
 
 	else
 	{
-		feedback_message = "Unknown command, type HELP for commands\n";
-		write_to_fd(fd, feedback_message);
+		// Only respond with unknown command message to chat clients. Servers that might 
+		// request ID upon connecting to us might cause infinite loop of these messages back and forth.
+		if (!is_server(fd))
+		{
+			feedback_message = "Unknown command, type HELP for commands\n";
+			write_to_fd(fd, feedback_message);
+		}
 	}
 
 }
@@ -581,17 +723,11 @@ void Server::execute_command(BufferContent& buffer_content)
 /**
  * parse the input buffer from the client and execute each command
 */
-void Server::parse_buffer(char * buffer, int fd)
+void Server::parse_buffer(std::string buffer, int fd)
 {
-	/* Memcopy the buffer onto a local buffer */
-	int buffer_length = strlen(buffer);
-	char local_buffer[buffer_length];
-	memset(local_buffer, 0, buffer_length);
-	memcpy(local_buffer, buffer, buffer_length + 1);
-
 	/* split input string by \ to get a vector of commands */
 	std::string delimeter = "\\";
-	std::vector<std::string> vector_buffer = string_utilities::split_by_delimeter(std::string(local_buffer), delimeter);
+	std::vector<std::string> vector_buffer = string_utilities::split_by_delimeter(std::string(buffer), delimeter);
 	
 	/* for each command, assign variables to buffer_content and execute command */
 	for (int i = 0; i < vector_buffer.size(); ++i)
