@@ -83,6 +83,9 @@ int Server::accept_connection(int fd, struct sockaddr_in& address)
 	return new_socket;
 }
 
+/**
+ * Add neighbor server to serverlist
+*/
 void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string server_id)
 {
 	stringstream ss;
@@ -99,6 +102,9 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string serve
 	neighbor_connections++;
 }
 
+/**
+ * Update ID for neighbor server
+*/
 void Server::update_server_id(int fd, string new_id)
 {
 	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
@@ -112,6 +118,9 @@ void Server::update_server_id(int fd, string new_id)
 	}
 }
 
+/**
+ * Update port for neighbor server
+*/
 void Server::update_server_port(int fd, int port)
 {
 	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
@@ -123,9 +132,20 @@ void Server::update_server_port(int fd, int port)
 	}
 }
 
+bool Server::is_server_in_list(int port)
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (it->second.get_port() == port)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 /**
- * Accept incomming server connection
+ * Accept incomming server connection from another server
 */
 void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 {
@@ -152,7 +172,7 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 
 
 /**
- * Connect to a server
+ * Connect the server to another server
 */
 void Server::connect_to_server(string sub_command)
 {
@@ -182,7 +202,8 @@ void Server::connect_to_server(string sub_command)
 		return;
 	}
 
-	//TODO: Check if 
+	//TODO: Check if server is already connected to
+	if (is_server_in_list(port)) { return; }
 
 	// create FD for new connection
 	fd = socket_utilities::create_tcp_socket(false);
@@ -490,7 +511,6 @@ void Server::receive_from_client_or_server(int fd)
 		}
 		else 
 		{
-			// BufferContent buffer_content;
 			string feedback_message;
 			// buffer_content.set_file_descriptor(fd);
 			disconnect_user(fd);
@@ -624,16 +644,7 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 			
 		}
 	}
-	// string command = buffer_content.get_command();
-	// string sub_command;
-	// string feedback_message;
-	// int fd = buffer_content.get_file_descriptor();
 
-	// cout << buffer_content.get_file_descriptor() << endl;
-	// cout << buffer_content.get_command() << endl;
-	// cout << buffer_content.get_sub_command() << endl;
-	// cout << buffer_content.get_body() << endl;
-	/* C&C commands */
 	if ((!command.compare("CS")))
 	{
 		connect_to_server(sub_command);
@@ -882,7 +893,7 @@ bool Server::response_is_listservers(string response)
 }
 
 /**
- * parse the input buffer from the client and execute each command
+ * parse the input buffer from the client and return a vector of comma seperated strings
 */
 vector<string> Server::parse_buffer(string buffer, int fd)
 {
@@ -896,35 +907,6 @@ vector<string> Server::parse_buffer(string buffer, int fd)
 		
 	}
 	return vector_buffer;
-	/* split input string by \ to get a vector of commands */
-	// string delimeter = "\\";
-	// vector<string> commands;
-	/* for each command, assign variables to buffer_content and execute command */
-	// for (int i = 0; i < vector_buffer.size(); ++i)
-	// {
-		// BufferContent buffer_content;
-		// buffer_content.set_file_descriptor(fd);
-		// vector<string> commands = string_utilities::split_by_delimeter_stopper(vector_buffer.at(i), ",", 2);
-		// for (int j = 0; j < commands.size(); ++j)
-		// {
-		// 	string cmd = commands.at(j);
-		// 	if (j == 0)
-		// 	{
-		// 		buffer_content.set_command(string_utilities::trim_string(cmd));
-		// 	}
-		// 	else if (j == 1)
-		// 	{	
-		// 		buffer_content.set_sub_command(string_utilities::trim_string(cmd));
-		// 	}
-		// 	else if (j == 2)
-		// 	{
-		// 		buffer_content.set_body(string_utilities::trim_string(cmd));
-		// 	}
-		// }
-		
-		// execute_command(buffer_content, from_server_id);
-		
-	// }
 }
 
 

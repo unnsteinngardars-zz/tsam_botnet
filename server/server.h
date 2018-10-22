@@ -21,7 +21,6 @@
 #include "../utilities/string_utilities.h"
 #include "../utilities/socket_utilities.h"
 #include "../utilities/time_utilities.h"
-#include "buffer_content.h"
 #include "server_connection.h"
 
 using namespace std;
@@ -73,6 +72,7 @@ class Server
 	
 	bool response_is_id(string response);
 	bool response_is_listservers(string response);
+	bool is_server_in_list(int port);
 	/* helper methods */
 	int get_fd_by_user(string username);
 	bool user_exists(int fd);
