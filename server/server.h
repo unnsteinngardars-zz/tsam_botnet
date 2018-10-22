@@ -63,13 +63,13 @@ class Server
 	string get_id();
 	/* API COMMAND methods */
 	void display_commands(int fd);
-	void display_users(BufferContent& buffer_content);
-	bool add_user(BufferContent& buffer_content, string& feedback_message);
-	void send_to_all(BufferContent& buffer_content);
-	void send_to_user(int rec_fd, BufferContent& buffer_content);
+	void display_users(int fd);
+	bool add_user(int fd, string username, string& feedback_message);
+	void send_to_all(string message);
+	void send_to_user(int rec_fd, string message);
 	
-	void parse_buffer(string buffer, int fd, string from_server_id = "");
-	void execute_command(BufferContent& buffer_content, string from_server_id = "");
+	vector<string> parse_buffer(string buffer, int fd);
+	void execute_command(int fd, vector<string> buffer, string from_server_id = "");
 	
 	bool response_is_id(string response);
 	bool response_is_listservers(string response);
@@ -84,9 +84,9 @@ class Server
 	int accept_connection(int fd, struct sockaddr_in& address);
 	string listservers();
 	void accept_incomming_server(int fd, struct sockaddr_in& address);
-	void connect_to_server(BufferContent& buffer_content);
+	void connect_to_server(string sub_command);
 	void add_to_serverlist(int fd, struct sockaddr_in& address, string server_id);
-	void disconnect_user(BufferContent& buffer_content);
+	void disconnect_user(int fd);
 	void select_wrapper(fd_set& set);
 	void service_udp_request(int fd);
 	void service_tcp_server_request(int fd);
@@ -94,6 +94,7 @@ class Server
 	void receive_from_client_or_server(int fd);
 	void fetch_id_from_fd(int fd);
 	void update_server_id(int fd, string new_id);
+	void update_server_port(int fd, int port);
   public:
 	Server(int server_p, int client_p, int udp_p, string server_id);
 	int run();

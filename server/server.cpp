@@ -112,6 +112,17 @@ void Server::update_server_id(int fd, string new_id)
 	}
 }
 
+void Server::update_server_port(int fd, int port)
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (it->first == fd)
+		{
+			it->second.set_port(port);
+		}
+	}
+}
+
 
 /**
  * Accept incomming server connection
@@ -143,7 +154,7 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 /**
  * Connect to a server
 */
-void Server::connect_to_server(BufferContent& buffer_content)
+void Server::connect_to_server(string sub_command)
 {
 
 	if (neighbor_connections == MAX_NEIGHBOUR_CONNECTIONS)
@@ -156,7 +167,7 @@ void Server::connect_to_server(BufferContent& buffer_content)
 	char buffer[32];
 	memset(buffer, 0, 32);
 	string server_id = "anonymous";
-	string sub_command = buffer_content.get_sub_command();
+	// string sub_command = buffer_content.get_sub_command();
 	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
 
 	if (host_and_port.size() < 2) { return; }
@@ -194,7 +205,9 @@ void Server::connect_to_server(BufferContent& buffer_content)
 
 	printf("successfully established connection to server %s:%d with fd %d\n", host.c_str(), port, fd);
 
-	string request_id = "CMD,," + get_id() + ",ID";
+	stringstream ss;
+	ss << ntohs(server_conn_port.second.sin_port);
+	string request_id = "CMD,," + get_id() + ",ID," + ss.str() + " ";
 	request_id = string_utilities::wrap_with_tokens(request_id);
 
 	write_to_fd(fd, request_id);
@@ -232,9 +245,8 @@ void Server::display_commands(int fd)
 /**
  * Display all users
 */
-void Server::display_users(BufferContent& buffer_content)
+void Server::display_users(int fd)
 {
-	int fd = buffer_content.get_file_descriptor();
 	string users = "\nLIST OF USERS:\n";
 	set<string>::iterator it;
 	for (it = usernames_set.begin(); it != usernames_set.end(); ++it){
@@ -270,10 +282,8 @@ string Server::listservers()
 /**
  * Add a newly connected user
 */
-bool Server::add_user(BufferContent& buffer_content, string& feedback_message)
+bool Server::add_user(int fd, string username, string& feedback_message)
 {
-	string username = buffer_content.get_sub_command() + buffer_content.get_body();
-	int fd = buffer_content.get_file_descriptor();
 	if (username.size() > 15 || !username.compare(""))
 	{	
 		feedback_message = "Username cannot be more than 15 characters\n";
@@ -298,9 +308,8 @@ bool Server::add_user(BufferContent& buffer_content, string& feedback_message)
 /**
  * Broadcast to all clients including yourself
 */
-void Server::send_to_all(BufferContent& buffer_content)
+void Server::send_to_all(string message)
 {	
-	string body = buffer_content.get_body();
 	for (int i = 0; i <= max_file_descriptor; i++)
 	{
 		/* Check if the client is in the active set */
@@ -308,7 +317,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 		{
 			if (i != server_conn_port.first && i != client_conn_port.first && i != udp_port.first)
 			{
-				write_to_fd(i, body);
+				write_to_fd(i, message);
 			}
 		}
 	}
@@ -317,11 +326,10 @@ void Server::send_to_all(BufferContent& buffer_content)
 /**
  * Send a message to a single client
 */
-void Server::send_to_user(int rec_fd, BufferContent& buffer_content)
+void Server::send_to_user(int rec_fd, string message)
 {
-	string body = buffer_content.get_body();
 	if (FD_ISSET(rec_fd, &active_set)){
-		write_to_fd(rec_fd, body);
+		write_to_fd(rec_fd, message);
 	}
 }
 
@@ -393,16 +401,16 @@ void Server::write_to_fd(int fd, string message)
 }
 
 
-void Server::disconnect_user(BufferContent& buffer_content)
+void Server::disconnect_user(int fd)
 {	
-	int fd = buffer_content.get_file_descriptor();
 	if (user_exists(fd))
 	{
-		string username = usernames.at(buffer_content.get_file_descriptor());
+		string username = usernames.at(fd);
 		cout << username <<  " has left" << endl;
-		buffer_content.set_body(username + " has left the chat");
-		send_to_all(buffer_content);
-		usernames.erase(buffer_content.get_file_descriptor());
+		// buffer_content.set_body(username + " has left the chat");
+		string message = username + " has left the chat";
+		send_to_all(message);
+		usernames.erase(fd);
 		remove_from_set(username);
 	}
 	FD_CLR(fd, &active_set);
@@ -458,6 +466,7 @@ void Server::service_tcp_client_request(int fd)
 
 void Server::receive_from_client_or_server(int fd)
 {
+	vector<string> vector_buffer;
 	char buffer[MAX_BUFFER_SIZE];
 	memset(buffer, 0, MAX_BUFFER_SIZE);
 	int read_bytes = recv(fd, buffer, MAX_BUFFER_SIZE, 0);
@@ -481,10 +490,10 @@ void Server::receive_from_client_or_server(int fd)
 		}
 		else 
 		{
-			BufferContent buffer_content;
+			// BufferContent buffer_content;
 			string feedback_message;
-			buffer_content.set_file_descriptor(fd);
-			disconnect_user(buffer_content);
+			// buffer_content.set_file_descriptor(fd);
+			disconnect_user(fd);
 		}
 	}
 	else 
@@ -500,7 +509,8 @@ void Server::receive_from_client_or_server(int fd)
 			buff = buff.substr(1, buff.size() - 2);
 			string_utilities::trim_string(buff);
 		}
-		parse_buffer(buff, fd);
+		vector_buffer = parse_buffer(buff, fd);
+		execute_command(fd, vector_buffer);
 	}
 }
 
@@ -542,46 +552,96 @@ bool Server::is_neighbor(string server_id)
 	return false;
 }
 
-void Server::update_server_port(int port)
-{
-	
-}
+
 
 /**
  * Execute a command
 */
-void Server::execute_command(BufferContent& buffer_content, string from_server_id)
+void Server::execute_command(int fd, vector<string> buffer, string from_server_id)
 {	
-	string command = buffer_content.get_command();
-	string sub_command;
-	string feedback_message;
-	int fd = buffer_content.get_file_descriptor();
+	string feedback_message = "";
+	string command = "";
+	string sub_command = "";
+	string body = "";
+	string source_server_id = "";
+	string destination_server_id = "";
+	string CMD_command = "";
+	string RSP_response = "";
+	
+	if (is_server(fd))
+	{
+		cout << "SERVER\n";
+		command = (!buffer.empty()) ? buffer.at(0) : "";
+		cout << "command: " + command << endl;
+		if(!command.compare("ID"))
+		{	
+			sub_command = (buffer.size() > 1) ? buffer.at(1) : "";
+			cout << "sub_command: " << sub_command << endl;
+		} else{
+			destination_server_id = (buffer.size() > 1) ? buffer.at(1) : "";
+		}
+		
+		cout << "source_server_id :" + source_server_id << endl;
+		source_server_id = (buffer.size() > 2) ? buffer.at(2) : "";
+		cout << "destination_server_id : " + destination_server_id << endl;
+		if(!command.compare("CMD")){
+			CMD_command = (buffer.size() > 3) ? buffer.at(3) : "";
+			cout << "CMD_command: " + CMD_command << endl;
+		}
+		else {
+			RSP_response = (buffer.size() > 3) ? buffer.at(3) : "";
+			cout << "RSP_response: " + RSP_response << endl;
+		}
+	}
+	else {
+		cout << "CLIENT\n";
+		command = (!buffer.empty()) ? buffer.at(0) : "";
+		cout << "command: " + command << endl;
+		sub_command = (buffer.size() > 1) ? buffer.at(1) : "";
+		cout << "sub_command: " + sub_command << endl;
+		body = (buffer.size() > 2) ? buffer.at(2) : "";
+		cout << "body: " + body << endl;
+		if (!command.compare("CMD") || !command.compare("RSP"))
+		{
+			destination_server_id = sub_command;
+			cout << "destination_server_id : " + destination_server_id << endl;
+			vector<string> body_split = string_utilities::split_by_delimeter_stopper(body, ",", 1);
+			if (body_split.size() > 1)
+			{
+				source_server_id = body_split.at(0);
+				cout << "source_server_id :" + source_server_id << endl;
+				if (!command.compare("CMD"))
+				{
+					CMD_command = body_split.at(1);
+					cout << "CMD_command: " + CMD_command << endl;
+				}
+				else if (!command.compare("RSP"))
+				{
+					RSP_response = body_split.at(1);
+					cout << "RSP_response: " + RSP_response << endl;
+				}
+			}
+			
+		}
+	}
+	// string command = buffer_content.get_command();
+	// string sub_command;
+	// string feedback_message;
+	// int fd = buffer_content.get_file_descriptor();
 
-	cout << buffer_content.get_file_descriptor() << endl;
-	cout << buffer_content.get_command() << endl;
-	cout << buffer_content.get_sub_command() << endl;
-	cout << buffer_content.get_body() << endl;
+	// cout << buffer_content.get_file_descriptor() << endl;
+	// cout << buffer_content.get_command() << endl;
+	// cout << buffer_content.get_sub_command() << endl;
+	// cout << buffer_content.get_body() << endl;
 	/* C&C commands */
 	if ((!command.compare("CS")))
 	{
-		connect_to_server(buffer_content);
+		connect_to_server(sub_command);
 	}
 
 	//TODO: Finish implementing manual fetch id 
 	else if (!command.compare("FETCHID"))
 	{
-		cout << command << endl;
-		sub_command = buffer_content.get_sub_command();
-		cout << sub_command << endl;
-		// struct hostent* h;
-		// vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ",");
-		// if (host_and_port.size() == 2)
-		// {
-		// 	h = gethostbyname(host_and_port.at(0).c_str());
-		// 	cout << string(h->h_addr) << endl;
-
-		// }
-		// int fd = get_fd_by_host_and_port(string_utilities::trim_string(sub_command));
 		fetch_id_from_fd(fd);
 	}
 	
@@ -612,77 +672,60 @@ void Server::execute_command(BufferContent& buffer_content, string from_server_i
 
 	else if (!command.compare("FETCH"))
 	{
-		if(!string_utilities::is_number(buffer_content.get_sub_command())) { return; }
-		int index = stoi(buffer_content.get_sub_command());
-		
+
+		if(!string_utilities::is_number(sub_command)) { return; }
+		int index = stoi(sub_command);
+		if(index < 1 || index > 5) { return; }
 		if (is_server(fd))
 		{
-			if(index < 1 || index > 5) { return; }
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",FETCH," + hashes.at(index);
+			RSP = string_utilities::wrap_with_tokens(RSP);
+			write_to_fd(fd, RSP);
 		}
-		else { write_to_fd(fd, hashes.at(index)); }
+		else 
+		{ 
+			write_to_fd(fd, hashes.at(index)); 
+		}
 	}
 
 	else if (!command.compare("CMD"))
 	{
-		// The source_id and command will reside in the body since we are using the same technique as in project 2
-		vector<string> source_and_cmd = string_utilities::split_by_delimeter_stopper(buffer_content.get_body(), ",", 3);
-		// the source_id and a COMMAND are minimum requirements so cannot be less than 2
-		if (source_and_cmd.size() < 2) { return; }
-		string dest = buffer_content.get_sub_command();
-		string source = source_and_cmd.at(0);
-		string cmd = source_and_cmd.at(1);
-		// If 3 then the rest is the sub_command/body for the command so we need to concatenate that to our command and keep the comma
-		if (source_and_cmd.size() == 3)
+		if (!(destination_server_id.compare(get_id())) || !(destination_server_id.compare("")))
 		{
-			cmd += "," + source_and_cmd.at(2);
-		}
-		// If we are the recipient or nobody is(then we assume that we are) 
-		if (!(dest.compare(get_id())) || !(dest.compare("")))
-		{
-			update_server_id(fd, source);		
-			parse_buffer(cmd, fd, source);
+			update_server_id(fd, source_server_id);		
+			vector<string> new_buffer = parse_buffer(CMD_command, fd);
+			execute_command(fd, new_buffer, source_server_id);
 		}
 		// We are not the recipient, forward
 		else
 		{
 			// TODO: Implement
 			cout << "Forward this CMD!\n";
-		}
-
-
-		
+		}		
 	}
 	else if (!command.compare("RSP"))
 	{
-		// We are the the destination
-		string dest = buffer_content.get_sub_command();
-		vector<string> dest_cmd_response = string_utilities::split_by_delimeter_stopper(buffer_content.get_body(), ",", 3);
-		if (dest_cmd_response.size() < 2) { return; }
-		string source = dest_cmd_response.at(0);
-		string cmd = dest_cmd_response.at(1);
-		string response = "";
-		if (dest_cmd_response.size() == 3)
-		{
-			response = dest_cmd_response.at(2);
-		}
+		vector<string> RSP_response_vector = string_utilities::split_by_delimeter_stopper(RSP_response, ",", 1);
+		if (RSP_response_vector.size() < 2) { return; }
+		string response_command = RSP_response_vector.at(0);
+		string response = RSP_response_vector.at(1);
 
-		if (!dest.compare(get_id()))
+		if (!destination_server_id.compare(get_id()))
 		{
-			if(!cmd.compare("ID"))
-			{
+			if(!response_command.compare("ID"))
+			{	
 				vector<string> id_port = string_utilities::split_by_delimeter(response, ",");
-				if (id_port.size() < 2)
+				if (id_port.size() == 2)
 				{
 					update_server_id(fd, id_port.at(0));
-					update_server_port(fd, id_port.at(1));
+					update_server_port(fd, stoi(id_port.at(1)));
 				}
 				else
 				{
 					update_server_id(fd, response);
 				}
 			}
-			else if (!cmd.compare("LISTSERVERS"))
+			else if (!response_command.compare("LISTSERVERS"))
 			{
 				// update routing table
 			}
@@ -698,10 +741,18 @@ void Server::execute_command(BufferContent& buffer_content, string from_server_i
 	{
 		// If it is a server requesting the ID, we respond with RSP
 		if (is_server(fd))
-		{	
-			stringstream ss;
-			ss << server_conn_port.first;
-			string RSP = "RSP," + from_server_id + "," + get_id() + ",ID," + get_id() + "," + ss.str();
+		{
+			string RSP = "";	
+			if(sub_command.compare(""))
+			{
+				update_server_port(fd, stoi(sub_command));
+				stringstream ss;
+				ss << ntohs(server_conn_port.second.sin_port);
+				RSP = "RSP," + from_server_id + "," + get_id() + ",ID," + get_id() + "," + ss.str();
+			}
+			else{
+				RSP = "RSP," + from_server_id + "," + get_id() + ",ID," + get_id();
+			}
 			RSP = string_utilities::wrap_with_tokens(RSP);
 			write_to_fd(fd, RSP);
 		}
@@ -712,40 +763,43 @@ void Server::execute_command(BufferContent& buffer_content, string from_server_i
 
 	else if ((!command.compare("CONNECT"))) 
 	{	
-		cout << buffer_content.get_sub_command() + buffer_content.get_body() + " has connected" << endl;
-		if (add_user(buffer_content, feedback_message))
+		cout << sub_command + body + " has connected" << endl;
+		string username = sub_command + body;
+		if (add_user(fd, username, feedback_message))
 		{
 			// write to all
-			buffer_content.set_body(feedback_message);
-			send_to_all(buffer_content);
+			// buffer_content.set_body(feedback_message);
+			send_to_all(feedback_message);
 		}
 		else
 		{
-			write(fd, feedback_message.c_str(), feedback_message.length());
+			write_to_fd(fd, feedback_message);
 		}
 
 	}
 
 	else if ((!command.compare("LEAVE"))) 
 	{
-		disconnect_user(buffer_content);
+
+		disconnect_user(fd);
 	}
 
 	else if ((!command.compare("WHO"))) 
 	{
-		display_users(buffer_content);
+		display_users(fd);
 
 	}
 	else if ((!command.compare("MSG"))) 
 	{
-		sub_command = buffer_content.get_sub_command();
+		// sub_command = buffer_content.get_sub_command();
 		if (user_exists(fd)){
 			string sending_user = usernames.at(fd);
 			if (!sub_command.compare("ALL"))
 			{
 				// send to all
-				buffer_content.set_body(sending_user + ": " + buffer_content.get_body() + "\n");
-				send_to_all(buffer_content);
+				// buffer_content.set_body(sending_user + ": " + buffer_content.get_body() + "\n");
+				string message = sending_user + ": " + body;
+				send_to_all(message);
 			}
 			else
 			{
@@ -756,8 +810,9 @@ void Server::execute_command(BufferContent& buffer_content, string from_server_i
 					// do not send to yourself
 					if(fd != rec_fd)
 					{	
-						buffer_content.set_body(sending_user + ": " + buffer_content.get_body() + "\n");
-						send_to_user(rec_fd, buffer_content);
+						// buffer_content.set_body(sending_user + ": " + buffer_content.get_body() + "\n");
+						string message = sending_user + ": " + body;
+						send_to_user(rec_fd, message);
 					}
 					else
 					{
@@ -784,7 +839,7 @@ void Server::execute_command(BufferContent& buffer_content, string from_server_i
 
 	else if ((!command.compare("HELP")))
 	{
-		display_commands(buffer_content.get_file_descriptor());
+		display_commands(fd);
 	}
 
 	else
@@ -829,37 +884,47 @@ bool Server::response_is_listservers(string response)
 /**
  * parse the input buffer from the client and execute each command
 */
-void Server::parse_buffer(string buffer, int fd, string from_server_id)
+vector<string> Server::parse_buffer(string buffer, int fd)
 {
-	/* split input string by \ to get a vector of commands */
-	string delimeter = "\\";
-	vector<string> vector_buffer = string_utilities::split_by_delimeter(string(buffer), delimeter);
-	vector<string> commands;
-	/* for each command, assign variables to buffer_content and execute command */
-	for (int i = 0; i < vector_buffer.size(); ++i)
-	{
-		BufferContent buffer_content;
-		buffer_content.set_file_descriptor(fd);
-		vector<string> commands = string_utilities::split_by_delimeter_stopper(vector_buffer.at(i), ",", 2);
-		for (int j = 0; j < commands.size(); ++j)
-		{
-			string cmd = commands.at(j);
-			if (j == 0)
-			{
-				buffer_content.set_command(string_utilities::trim_string(cmd));
-			}
-			else if (j == 1)
-			{	
-				buffer_content.set_sub_command(string_utilities::trim_string(cmd));
-			}
-			else if (j == 2)
-			{
-				buffer_content.set_body(string_utilities::trim_string(cmd));
-			}
-		}
-		execute_command(buffer_content, from_server_id);
+	vector<string> vector_buffer;
+	if (is_server(fd))
+	{	
+		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 3);
+	}
+	else{
+		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 2);
 		
 	}
+	return vector_buffer;
+	/* split input string by \ to get a vector of commands */
+	// string delimeter = "\\";
+	// vector<string> commands;
+	/* for each command, assign variables to buffer_content and execute command */
+	// for (int i = 0; i < vector_buffer.size(); ++i)
+	// {
+		// BufferContent buffer_content;
+		// buffer_content.set_file_descriptor(fd);
+		// vector<string> commands = string_utilities::split_by_delimeter_stopper(vector_buffer.at(i), ",", 2);
+		// for (int j = 0; j < commands.size(); ++j)
+		// {
+		// 	string cmd = commands.at(j);
+		// 	if (j == 0)
+		// 	{
+		// 		buffer_content.set_command(string_utilities::trim_string(cmd));
+		// 	}
+		// 	else if (j == 1)
+		// 	{	
+		// 		buffer_content.set_sub_command(string_utilities::trim_string(cmd));
+		// 	}
+		// 	else if (j == 2)
+		// 	{
+		// 		buffer_content.set_body(string_utilities::trim_string(cmd));
+		// 	}
+		// }
+		
+		// execute_command(buffer_content, from_server_id);
+		
+	// }
 }
 
 
