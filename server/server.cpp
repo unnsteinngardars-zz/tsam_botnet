@@ -1,7 +1,8 @@
 #include "server.h"
 
 /**
- * Initialize a Server with fortune
+ * Initialize a Server with a tcp and udp port
+ * TODO: Remove client_p and server_id and hardcode! ALTER entry.cpp to comply
 */
 Server::Server(int server_p, int client_p, int udp_p, string server_id)
 {
@@ -42,209 +43,17 @@ Server::Server(int server_p, int client_p, int udp_p, string server_id)
 
 
 /**
- * Get the fortune
+ * Get the ID of the server
 */
 string Server::get_id()
 {
 	return id;
 }
 
-
 /**
- * Set the max buffer size
+ * CLIENT CONNECTION REALTED METHODS
+ * Below methods relate to client connections
 */
-void Server::set_max_buffer(int size)
-{
-	MAX_BUFFER_SIZE = size;
-}
-
-/**
- * Update the maximum file descriptor variable
-*/
-void Server::update_max_fd(int fd)
-{
-	if (fd > max_file_descriptor) {
-		max_file_descriptor = fd;
-	}
-}
-
-/**
- * Accept a connection
-*/
-int Server::accept_connection(int fd, struct sockaddr_in& address)
-{
-
-	socklen_t address_length = sizeof(address);
-	int new_socket = accept(fd, (struct sockaddr *)&address, &address_length);
-	if(new_socket < 0){
-		socket_utilities::error("Failed to establish connection");
-	}
-	printf("Connection established from %s port %d and fd %d\n", inet_ntoa(address.sin_addr), ntohs(address.sin_port), new_socket);	
-	return new_socket;
-}
-
-/**
- * Add neighbor server to serverlist
-*/
-void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string server_id)
-{
-	stringstream ss;
-	ss << ntohs(address.sin_port);
-	ServerConnection server_connection = ServerConnection();
-	server_connection.set_fd(fd);
-	server_connection.set_id(server_id);
-	server_connection.set_host(string(inet_ntoa(address.sin_addr)));
-	server_connection.set_port(ntohs(address.sin_port));
-	pair<int, ServerConnection> pair;
-	pair.first = fd;
-	pair.second = server_connection;
-	neighbors.insert(pair);
-	neighbor_connections++;
-}
-
-/**
- * Update ID for neighbor server
-*/
-void Server::update_server_id(int fd, string new_id)
-{
-	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-	{
-		if (it->first == fd)
-		{
-			if (!it->second.get_id().compare("anonymous")){
-				it->second.set_id(new_id);
-			}
-		}
-	}
-}
-
-/**
- * Update port for neighbor server
-*/
-void Server::update_server_port(int fd, int port)
-{
-	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-	{
-		if (it->first == fd)
-		{
-			it->second.set_port(port);
-		}
-	}
-}
-
-bool Server::is_server_in_list(int port)
-{
-	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-	{
-		if (it->second.get_port() == port)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * Accept incomming server connection from another server
-*/
-void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
-{
-
-	if(neighbor_connections < MAX_NEIGHBOUR_CONNECTIONS)
-	{
-		// send ID to incomming server
-		FD_SET(fd, &active_set);
-		update_max_fd(fd);
-		string server_id = "anonymous";
-		// string server_id = retreive_id(fd);
-		add_to_serverlist(fd, address, server_id);
-		cout << "accept_incomming_connections: " << server_id << endl;
-	}
-	else 
-	{
-		string message = "Server has maximized allowed connections\n";
-		write_to_fd(fd, message);
-		FD_CLR(fd, &active_set);
-		close(fd);
-	}
-}
-
-
-
-/**
- * Connect the server to another server
-*/
-void Server::connect_to_server(string sub_command)
-{
-
-	if (neighbor_connections == MAX_NEIGHBOUR_CONNECTIONS)
-	{
-		printf("Server has reached maximum neighbor threshold\n");
-		return;
-	}
-
-	int n, fd;
-	char buffer[32];
-	memset(buffer, 0, 32);
-	string server_id = "anonymous";
-	// string sub_command = buffer_content.get_sub_command();
-	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
-
-	if (host_and_port.size() < 2) { return; }
-	if (!string_utilities::is_number(host_and_port.at(1))) { return; }
-
-	string host = host_and_port.at(0);
-	int port = stoi(host_and_port.at(1));
-
-	if (port == ntohs(server_conn_port.second.sin_port))
-	{
-		printf("Cannot connect to oneself mate :)\n");
-		return;
-	}
-
-	//TODO: Check if server is already connected to
-	if (is_server_in_list(port)) { return; }
-
-	// create FD for new connection
-	fd = socket_utilities::create_tcp_socket(false);
-	struct sockaddr_in address;
-	struct hostent* h;
-	h = gethostbyname(host.c_str());
-	address.sin_family = AF_INET;
-	address.sin_port = htons(port);
-	memcpy((char*)&address.sin_addr.s_addr, (char*) h->h_addr, h->h_length);
-	// connect
-	n = connect(fd, (struct sockaddr*) &address, sizeof(address));
-	if (n < 0)
-	{
-		printf("failed to establish connection to %s:%d\n", host.c_str(), port);
-		close(fd);
-		return;
-	}
-	FD_SET(fd, &active_set);
-	update_max_fd(fd);
-
-	printf("successfully established connection to server %s:%d with fd %d\n", host.c_str(), port, fd);
-
-	stringstream ss;
-	ss << ntohs(server_conn_port.second.sin_port);
-	string request_id = "CMD,," + get_id() + ",ID," + ss.str() + " ";
-	request_id = string_utilities::wrap_with_tokens(request_id);
-
-	write_to_fd(fd, request_id);
-	// memset(buffer, 0, 32);
-	// n = recv(fd, buffer, 32, 0);
-	// if (n > 0)
-	// {
-	// 	string_utilities::trim_cstr(buffer);
-	// 	server_id = string(buffer);
-	// }
-
-	add_to_serverlist(fd, address, server_id);
-	cout << "connect_to_server: " << server_id << endl;
-
-}
-
 
 /**
  * Display all commands
@@ -276,29 +85,6 @@ void Server::display_users(int fd)
 	}
 	write_to_fd(fd, users);
 }
-
-/**
- * List all neighbour servers
-*/
-string Server::listservers()
-{
-	string servers;
-	if (neighbors.empty())
-	{
-		servers = "Server " + get_id() + " has no neighbours\n";
-	}
-	else 
-	{
-		for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-		{
-			stringstream ss;
-			ss << it->second.get_port();
-			servers += it->second.get_id() + "," + it->second.get_host() + "," + ss.str() + ";";
-		}
-	}
-	return servers;
-}
-
 
 /**
  * Add a newly connected user
@@ -355,43 +141,6 @@ void Server::send_to_user(int rec_fd, string message)
 }
 
 /**
- * Remove a user from the set of usernames
-*/
-void Server::remove_from_set(string username)
-{
-	set<string>::iterator it;
-	for (it = usernames_set.begin(); it != usernames_set.end(); ++it)
-	{	
-		string user = *it;
-		if (!user.compare(username)){
-			usernames_set.erase(it);
-			break;
-		}
-	}
-}
-
-/**
- * Check if a user exists
-*/
-bool Server::user_exists(int fd)
-{
-	if (usernames.count(fd) == 1) 
-	{
-		return true;
-	}
-	return false;
-}
-
-bool Server::is_server(int fd)
-{
-	if(neighbors.count(fd) == 1)
-	{
-		return true;
-	}
-	return false;
-}
-
-/**
  * Get a file descriptor by username
 */
 int Server::get_fd_by_user(string username)
@@ -409,19 +158,38 @@ int Server::get_fd_by_user(string username)
 	return fd;
 }
 
-void Server::write_to_fd(int fd, string message)
+
+/**
+ * Check if a user exists
+*/
+bool Server::user_exists(int fd)
 {
-	if (socket_utilities::write_to_fd(fd, message) < 0)
+	if (usernames.count(fd) == 1) 
 	{
-		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
-		{
-			FD_CLR(fd, &active_set);
-			close(fd);
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Remove a user from the set of usernames
+*/
+void Server::remove_from_set(string username)
+{
+	set<string>::iterator it;
+	for (it = usernames_set.begin(); it != usernames_set.end(); ++it)
+	{	
+		string user = *it;
+		if (!user.compare(username)){
+			usernames_set.erase(it);
+			break;
 		}
 	}
 }
 
-
+/**
+ * Disconnect a user
+*/
 void Server::disconnect_user(int fd)
 {	
 	if (user_exists(fd))
@@ -438,6 +206,318 @@ void Server::disconnect_user(int fd)
 	close(fd);
 }
 
+void Server::service_tcp_client_request(int fd)
+{
+	struct sockaddr_in address;
+	int client_fd = accept_connection(fd, address);
+	string welcome_message = "Welcome, type HELP for available commands\n";
+	write_to_fd(client_fd, welcome_message);
+	FD_SET(client_fd, &active_set);
+	update_max_fd(client_fd);
+}
+
+/**
+ * SERVER CONNECTION RELATED METHODS
+ * Below methods are related to connected servers
+*/
+
+
+/**
+ * Check if we find server by port
+*/
+bool Server::is_server_in_list(int port)
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (it->second.get_port() == port)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Check if the response is ID
+ * depricated!
+*/
+bool Server::response_is_id(string response)
+{
+	// V_Group_
+	string sub = response.substr(0, 7);
+	if ( (!sub.compare("V_Group_")) && response.size() < 11)
+	{
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Check if the response is listservers
+ * depricated!
+*/
+bool Server::response_is_listservers(string response)
+{
+	vector<string> servers = string_utilities::split_by_delimeter(response, ";");
+	for(int i = 0; i < servers.size(); ++i)
+	{
+		vector<string> data = string_utilities::split_by_delimeter(servers.at(i), ",");
+		if (data.size() != 3)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Check if the server id is our neighbor
+*/
+bool Server::is_neighbor(string server_id)
+{
+	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (!it->second.get_id().compare(server_id))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Check if the FD is a neighbor
+*/
+bool Server::is_server(int fd)
+{
+	if(neighbors.count(fd) == 1)
+	{
+		return true;
+	}
+	return false;
+}
+
+
+/**
+ * List all neighbour servers
+*/
+string Server::listservers()
+{
+	string servers;
+	if (neighbors.empty())
+	{
+		servers = "Server " + get_id() + " has no neighbours\n";
+	}
+	else 
+	{
+		for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+		{
+			stringstream ss;
+			ss << it->second.get_port();
+			servers += it->second.get_id() + "," + it->second.get_host() + "," + ss.str() + ";";
+		}
+	}
+	return servers;
+}
+
+
+/**
+ * Add neighbor server to serverlist
+*/
+void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string server_id)
+{
+	stringstream ss;
+	ss << ntohs(address.sin_port);
+	ServerConnection server_connection = ServerConnection();
+	server_connection.set_fd(fd);
+	server_connection.set_id(server_id);
+	server_connection.set_host(string(inet_ntoa(address.sin_addr)));
+	server_connection.set_port(ntohs(address.sin_port));
+	pair<int, ServerConnection> pair;
+	pair.first = fd;
+	pair.second = server_connection;
+	neighbors.insert(pair);
+	neighbor_connections++;
+}
+
+/**
+ * Update ID for neighbor server
+*/
+void Server::update_server_id(int fd, string new_id)
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (it->first == fd)
+		{
+			if (!it->second.get_id().compare("anonymous")){
+				it->second.set_id(new_id);
+			}
+		}
+	}
+}
+
+/**
+ * Update port for neighbor server
+*/
+void Server::update_server_port(int fd, int port)
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (it->first == fd)
+		{
+			it->second.set_port(port);
+		}
+	}
+}
+
+/**
+ * Accept incomming server connection from another server
+*/
+void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
+{
+
+	if(neighbor_connections < MAX_NEIGHBOUR_CONNECTIONS)
+	{
+		// send ID to incomming server
+		FD_SET(fd, &active_set);
+		update_max_fd(fd);
+		string server_id = "anonymous";
+		// string server_id = retreive_id(fd);
+		add_to_serverlist(fd, address, server_id);
+		cout << "accept_incomming_connections: " << server_id << endl;
+	}
+	else 
+	{
+		string message = "Server has maximized allowed connections\n";
+		write_to_fd(fd, message);
+		FD_CLR(fd, &active_set);
+		close(fd);
+	}
+}
+
+
+/**
+ * Connect the server to another server
+*/
+void Server::connect_to_server(string sub_command)
+{
+
+	if (neighbor_connections == MAX_NEIGHBOUR_CONNECTIONS)
+	{
+		printf("Server has reached maximum neighbor threshold\n");
+		return;
+	}
+
+	int n, fd;
+	char buffer[32];
+	memset(buffer, 0, 32);
+	string server_id = "anonymous";
+	// string sub_command = buffer_content.get_sub_command();
+	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
+
+	if (host_and_port.size() < 2) { return; }
+	if (!string_utilities::is_number(host_and_port.at(1))) { return; }
+
+	string host = host_and_port.at(0);
+	int port = stoi(host_and_port.at(1));
+
+	if (port == ntohs(server_conn_port.second.sin_port))
+	{
+		printf("Cannot connect to oneself mate :)\n");
+		return;
+	}
+
+	if (is_server_in_list(port)) { return; }
+
+	// create FD for new connection
+	fd = socket_utilities::create_tcp_socket(false);
+	struct sockaddr_in address;
+	struct hostent* h;
+	h = gethostbyname(host.c_str());
+	address.sin_family = AF_INET;
+	address.sin_port = htons(port);
+	memcpy((char*)&address.sin_addr.s_addr, (char*) h->h_addr, h->h_length);
+	// connect
+	n = connect(fd, (struct sockaddr*) &address, sizeof(address));
+	if (n < 0)
+	{
+		printf("failed to establish connection to %s:%d\n", host.c_str(), port);
+		close(fd);
+		return;
+	}
+	FD_SET(fd, &active_set);
+	update_max_fd(fd);
+
+	printf("successfully established connection to server %s:%d with fd %d\n", host.c_str(), port, fd);
+
+	stringstream ss;
+	ss << ntohs(server_conn_port.second.sin_port);
+	string request_id = "CMD,," + get_id() + ",ID," + ss.str() + " ";
+	request_id = string_utilities::wrap_with_tokens(request_id);
+	write_to_fd(fd, request_id);
+	add_to_serverlist(fd, address, server_id);
+}
+
+/**
+ * Service the server TCP request
+*/
+void Server::service_tcp_server_request(int fd)
+{
+	struct sockaddr_in address;
+	int server_fd = accept_connection(fd, address);
+	accept_incomming_server(server_fd, address);
+}
+
+
+/**
+ * CLIENT/SERVER CONNECTION RELATED METHODS
+ * Below methods relate to client and server connections equallt
+*/
+
+/**
+ * Write message to a socket
+*/
+void Server::write_to_fd(int fd, string message)
+{
+	if (socket_utilities::write_to_fd(fd, message) < 0)
+	{
+		if (!(errno == EWOULDBLOCK || errno == EAGAIN))
+		{
+			FD_CLR(fd, &active_set);
+			close(fd);
+		}
+	}
+}
+
+/**
+ * Update the maximum file descriptor variable
+*/
+void Server::update_max_fd(int fd)
+{
+	if (fd > max_file_descriptor) {
+		max_file_descriptor = fd;
+	}
+}
+
+
+/**
+ * Accept a connection
+*/
+int Server::accept_connection(int fd, struct sockaddr_in& address)
+{
+
+	socklen_t address_length = sizeof(address);
+	int new_socket = accept(fd, (struct sockaddr *)&address, &address_length);
+	if(new_socket < 0){
+		socket_utilities::error("Failed to establish connection");
+	}
+	printf("Connection established from %s port %d and fd %d\n", inet_ntoa(address.sin_addr), ntohs(address.sin_port), new_socket);	
+	return new_socket;
+}
+
+/**
+ * Wrapper method for select
+*/
 void Server::select_wrapper(fd_set& set)
 {
 	if (select(max_file_descriptor + 1, &set, NULL, NULL, NULL) < 0)
@@ -450,6 +530,9 @@ void Server::select_wrapper(fd_set& set)
 	}
 }
 
+/**
+ * Service the udp request
+*/
 void Server::service_udp_request(int fd)
 {
 	char buffer[MAX_BUFFER_SIZE];
@@ -468,23 +551,9 @@ void Server::service_udp_request(int fd)
 	}
 }
 
-void Server::service_tcp_server_request(int fd)
-{
-	struct sockaddr_in address;
-	int server_fd = accept_connection(fd, address);
-	accept_incomming_server(server_fd, address);
-}
-
-void Server::service_tcp_client_request(int fd)
-{
-	struct sockaddr_in address;
-	int client_fd = accept_connection(fd, address);
-	string welcome_message = "Welcome, type HELP for available commands\n";
-	write_to_fd(client_fd, welcome_message);
-	FD_SET(client_fd, &active_set);
-	update_max_fd(client_fd);
-}
-
+/**
+ * receive wrapper
+*/
 void Server::receive_from_client_or_server(int fd)
 {
 	vector<string> vector_buffer;
@@ -499,10 +568,9 @@ void Server::receive_from_client_or_server(int fd)
 			close(fd);
 		}
 	}
-	/* client disconnects friendly without using the LEAVE command*/
+	/* client/server disconnects friendly without using the LEAVE command*/
 	else if (read_bytes == 0)
 	{
-		///TODO: Check if server is leaving and remove from server structures
 		if (is_server(fd))
 		{
 			// REMOVE SERVER
@@ -512,7 +580,6 @@ void Server::receive_from_client_or_server(int fd)
 		else 
 		{
 			string feedback_message;
-			// buffer_content.set_file_descriptor(fd);
 			disconnect_user(fd);
 		}
 	}
@@ -521,11 +588,11 @@ void Server::receive_from_client_or_server(int fd)
 		string buff = string(buffer);
 		if (is_server(fd))
 		{
-			// Remove tokens
 			if (!(buff[0] == SOH) && !(buff[buff.size() - 1] == EOT))
 			{
 				return;
 			}			
+			// Remove bytestuffed tokens
 			buff = buff.substr(1, buff.size() - 2);
 			string_utilities::trim_string(buff);
 		}
@@ -534,44 +601,22 @@ void Server::receive_from_client_or_server(int fd)
 	}
 }
 
-//TODO: not finished, manual command to fetch ID from a server by FD
-void Server::fetch_id_from_fd(int fd)
+/**
+ * parse the input buffer from the client and return a vector of comma seperated strings
+*/
+vector<string> Server::parse_buffer(string buffer, int fd)
 {
-	char buffer[32];
-	memset(buffer, 0, 32);
-	write_to_fd(fd, "ID");
-	int n = recv(fd, buffer, 32, 0);
-	if (n > 0)
-	{
-		string_utilities::trim_cstr(buffer);
-		string server_id = string(buffer);
-		// UPDATE SERVER LIST 
-		for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-		{
-			if (it->first == fd)
-			{
-				// anonymous,127.0.0.1,4001
-				// string value = it->second;
-				// vector<string> vec = string_utilities::split_by_delimeter(it->second, ",");
-				// it->second = server_id + "," + vec.at(1) + "," + vec.at(2) + ";";
-			}
-		}
-		// update_server_list(string(buffer));
+	vector<string> vector_buffer;
+	if (is_server(fd))
+	{	
+		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 3);
 	}
-}
-
-bool Server::is_neighbor(string server_id)
-{
-	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
-	{
-		if (!it->second.get_id().compare(server_id))
-		{
-			return true;
-		}
+	else{
+		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 2);
+		
 	}
-	return false;
+	return vector_buffer;
 }
-
 
 
 /**
@@ -650,16 +695,9 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		connect_to_server(sub_command);
 	}
 
-	//TODO: Finish implementing manual fetch id 
-	else if (!command.compare("FETCHID"))
-	{
-		fetch_id_from_fd(fd);
-	}
-	
 	/* Client/Server Commands */
 	else if (!command.compare("LISTSERVERS"))
 	{
-		//TODO: Send listservers to FD
 		if (is_server(fd))
 		{	
 			// TODO:: check for tokens and remove
@@ -866,51 +904,14 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 
 }
 
-bool Server::response_is_id(string response)
-{
-	// V_Group_
-	string sub = response.substr(0, 7);
-	if ( (!sub.compare("V_Group_")) && response.size() < 11)
-	{
-		return true;
-	}
-	return false;
-}
 
 
-bool Server::response_is_listservers(string response)
-{
-	vector<string> servers = string_utilities::split_by_delimeter(response, ";");
-	for(int i = 0; i < servers.size(); ++i)
-	{
-		vector<string> data = string_utilities::split_by_delimeter(servers.at(i), ",");
-		if (data.size() != 3)
-		{
-			return false;
-		}
-	}
-	return true;
-}
+
+
 
 /**
- * parse the input buffer from the client and return a vector of comma seperated strings
+ * PUBLIC METHODS
 */
-vector<string> Server::parse_buffer(string buffer, int fd)
-{
-	vector<string> vector_buffer;
-	if (is_server(fd))
-	{	
-		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 3);
-	}
-	else{
-		vector_buffer = string_utilities::split_by_delimeter_stopper(buffer, ",", 2);
-		
-	}
-	return vector_buffer;
-}
-
-
-
 
 /**
  * Run the server
@@ -963,5 +964,13 @@ int Server::run()
 	return 0;
 }
 
+
+/**
+ * Set the max buffer size
+*/
+void Server::set_max_buffer(int size)
+{
+	MAX_BUFFER_SIZE = size;
+}
 
 
