@@ -259,7 +259,7 @@ bool Server::response_is_id(string response)
 bool Server::response_is_listservers(string response)
 {
 	vector<string> servers = string_utilities::split_by_delimeter(response, ";");
-	for(int i = 0; i < servers.size(); ++i)
+	for(unsigned int i = 0; i < servers.size(); ++i)
 	{
 		vector<string> data = string_utilities::split_by_delimeter(servers.at(i), ",");
 		if (data.size() != 3)

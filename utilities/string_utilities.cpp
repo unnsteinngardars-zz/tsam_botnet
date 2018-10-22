@@ -63,8 +63,14 @@ std::vector<std::string> string_utilities::split_by_delimeter_stopper(std::strin
 */
 bool string_utilities::is_number(std::string str)
 {
-	return !str.empty() && std::find_if(str.begin(), 
-	str.end(), [](char c) { return !std::isdigit(c); }) == str.end();
+	for(int i = 0; i < str.size(); ++i)
+	{
+		if (!isdigit((char)str[i]))
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 std::string string_utilities::wrap_with_tokens(std::string str)
