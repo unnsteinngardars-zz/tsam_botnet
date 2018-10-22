@@ -3,8 +3,13 @@
 /**
  * Initialize a Server with fortune
 */
-Server::Server(int server_p, int client_p, int udp_p, std::string server_id)
+Server::Server(int server_p, int client_p, int udp_p, string server_id)
 {
+	hashes.insert(Pair(1, "398e3848552c55d931d7ae4b48ffea40"));
+	hashes.insert(Pair(2, "a181a603769c1f98ad927e7367c7aa51"));
+	hashes.insert(Pair(3, "d80ea254f1b207e19040e7932e958d1c"));
+	hashes.insert(Pair(4, "6864f389d9876436bc8778ff071d1b6c"));
+	hashes.insert(Pair(5, "ca23ba209cc33678530392b7197fda4d"));
 
 	id = server_id; // might later take in argv[0] from main and assign
 	FD_ZERO(&active_set);
@@ -39,7 +44,7 @@ Server::Server(int server_p, int client_p, int udp_p, std::string server_id)
 /**
  * Get the fortune
 */
-std::string Server::get_id()
+string Server::get_id()
 {
 	return id;
 }
@@ -78,24 +83,32 @@ int Server::accept_connection(int fd, struct sockaddr_in& address)
 	return new_socket;
 }
 
-void Server::add_to_serverlist(int fd, struct sockaddr_in& address, std::string server_id)
+void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string server_id)
 {
-	std::stringstream ss;
+	stringstream ss;
 	ss << ntohs(address.sin_port);
-	std::string value = server_id + "," + std::string(inet_ntoa(address.sin_addr)) + "," + ss.str() + ";";
-	neighbors_by_fd.insert(Pair(fd, value));
-	std::pair<std::string, int> conn_info_pair;
-	// conn_info_pair.first = std::string(inet_ntoa(address.sin_addr)) + "," + ss.str();
-	// conn_info_pair.second = fd;
-	// neighbors_by_conninfo.insert(conn_info_pair);
+	ServerConnection server_connection = ServerConnection();
+	server_connection.set_fd(fd);
+	server_connection.set_id(server_id);
+	server_connection.set_host(string(inet_ntoa(address.sin_addr)));
+	server_connection.set_port(ntohs(address.sin_port));
+	pair<int, ServerConnection> pair;
+	pair.first = fd;
+	pair.second = server_connection;
+	neighbors.insert(pair);
 	neighbor_connections++;
 }
 
-void Server::update_server_id(int fd)
+void Server::update_server_id(int fd, string new_id)
 {
-	for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
 	{
-
+		if (it->first == fd)
+		{
+			if (!it->second.get_id().compare("anonymous")){
+				it->second.set_id(new_id);
+			}
+		}
 	}
 }
 
@@ -111,14 +124,14 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 		// send ID to incomming server
 		FD_SET(fd, &active_set);
 		update_max_fd(fd);
-		std::string server_id = "anonymous";
-		// std::string server_id = retreive_id(fd);
+		string server_id = "anonymous";
+		// string server_id = retreive_id(fd);
 		add_to_serverlist(fd, address, server_id);
-		std::cout << "accept_incomming_connections: " << server_id << std::endl;
+		cout << "accept_incomming_connections: " << server_id << endl;
 	}
 	else 
 	{
-		std::string message = "Server has maximized allowed connections\n";
+		string message = "Server has maximized allowed connections\n";
 		write_to_fd(fd, message);
 		FD_CLR(fd, &active_set);
 		close(fd);
@@ -142,14 +155,14 @@ void Server::connect_to_server(BufferContent& buffer_content)
 	int n, fd;
 	char buffer[32];
 	memset(buffer, 0, 32);
-	std::string server_id = "anonymous";
-	std::string sub_command = buffer_content.get_sub_command();
-	std::vector<std::string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
+	string server_id = "anonymous";
+	string sub_command = buffer_content.get_sub_command();
+	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
 
 	if (host_and_port.size() < 2) { return; }
 	if (!string_utilities::is_number(host_and_port.at(1))) { return; }
 
-	std::string host = host_and_port.at(0);
+	string host = host_and_port.at(0);
 	int port = stoi(host_and_port.at(1));
 
 	if (port == ntohs(server_conn_port.second.sin_port))
@@ -157,6 +170,8 @@ void Server::connect_to_server(BufferContent& buffer_content)
 		printf("Cannot connect to oneself mate :)\n");
 		return;
 	}
+
+	//TODO: Check if 
 
 	// create FD for new connection
 	fd = socket_utilities::create_tcp_socket(false);
@@ -179,20 +194,20 @@ void Server::connect_to_server(BufferContent& buffer_content)
 
 	printf("successfully established connection to server %s:%d with fd %d\n", host.c_str(), port, fd);
 
-	std::string request_id = "CMD,," + get_id() + ",ID";
+	string request_id = "CMD,," + get_id() + ",ID";
 	request_id = string_utilities::wrap_with_tokens(request_id);
 
 	write_to_fd(fd, request_id);
-	memset(buffer, 0, 32);
-	n = recv(fd, buffer, 32, 0);
-	if (n > 0)
-	{
-		string_utilities::trim_cstr(buffer);
-		server_id = std::string(buffer);
-	}
+	// memset(buffer, 0, 32);
+	// n = recv(fd, buffer, 32, 0);
+	// if (n > 0)
+	// {
+	// 	string_utilities::trim_cstr(buffer);
+	// 	server_id = string(buffer);
+	// }
 
 	add_to_serverlist(fd, address, server_id);
-	std::cout << "connect_to_server: " << server_id << std::endl;
+	cout << "connect_to_server: " << server_id << endl;
 
 }
 
@@ -202,7 +217,7 @@ void Server::connect_to_server(BufferContent& buffer_content)
 */
 void Server::display_commands(int fd)
 {
-	std::string help_message = "\nAvailable commands are:\n\n";
+	string help_message = "\nAvailable commands are:\n\n";
 	help_message += "ID\t\tGet the ID of the server\n";
 	help_message += "CHANGE ID\t\tChange the ID of the server\n";
 	help_message += "CONNECT <username>\tIdentify yourself with username, cannot include space\n";
@@ -220,10 +235,10 @@ void Server::display_commands(int fd)
 void Server::display_users(BufferContent& buffer_content)
 {
 	int fd = buffer_content.get_file_descriptor();
-	std::string users = "\nLIST OF USERS:\n";
-	std::set<std::string>::iterator it;
+	string users = "\nLIST OF USERS:\n";
+	set<string>::iterator it;
 	for (it = usernames_set.begin(); it != usernames_set.end(); ++it){
-		std::string username = *it;
+		string username = *it;
 		users += " " + username + "\n";
 	}
 	write_to_fd(fd, users);
@@ -232,19 +247,20 @@ void Server::display_users(BufferContent& buffer_content)
 /**
  * List all neighbour servers
 */
-std::string Server::listservers()
+string Server::listservers()
 {
-	std::string servers;
-	if (neighbors_by_fd.empty())
+	string servers;
+	if (neighbors.empty())
 	{
 		servers = "Server " + get_id() + " has no neighbours\n";
 	}
 	else 
 	{
-		// std::map<int, std::string>::iterator it;
-		for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
+		for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
 		{
-			servers += it->second;
+			stringstream ss;
+			ss << it->second.get_port();
+			servers += it->second.get_id() + "," + it->second.get_host() + "," + ss.str() + ";";
 		}
 	}
 	return servers;
@@ -254,9 +270,9 @@ std::string Server::listservers()
 /**
  * Add a newly connected user
 */
-bool Server::add_user(BufferContent& buffer_content, std::string& feedback_message)
+bool Server::add_user(BufferContent& buffer_content, string& feedback_message)
 {
-	std::string username = buffer_content.get_sub_command() + buffer_content.get_body();
+	string username = buffer_content.get_sub_command() + buffer_content.get_body();
 	int fd = buffer_content.get_file_descriptor();
 	if (username.size() > 15 || !username.compare(""))
 	{	
@@ -280,12 +296,11 @@ bool Server::add_user(BufferContent& buffer_content, std::string& feedback_messa
 }
 
 /**
- * Broadcast to all clients
+ * Broadcast to all clients including yourself
 */
 void Server::send_to_all(BufferContent& buffer_content)
 {	
-	int fd = buffer_content.get_file_descriptor();
-	std::string body = buffer_content.get_body();
+	string body = buffer_content.get_body();
 	for (int i = 0; i <= max_file_descriptor; i++)
 	{
 		/* Check if the client is in the active set */
@@ -304,7 +319,7 @@ void Server::send_to_all(BufferContent& buffer_content)
 */
 void Server::send_to_user(int rec_fd, BufferContent& buffer_content)
 {
-	std::string body = buffer_content.get_body();
+	string body = buffer_content.get_body();
 	if (FD_ISSET(rec_fd, &active_set)){
 		write_to_fd(rec_fd, body);
 	}
@@ -313,12 +328,12 @@ void Server::send_to_user(int rec_fd, BufferContent& buffer_content)
 /**
  * Remove a user from the set of usernames
 */
-void Server::remove_from_set(std::string username)
+void Server::remove_from_set(string username)
 {
-	std::set<std::string>::iterator it;
+	set<string>::iterator it;
 	for (it = usernames_set.begin(); it != usernames_set.end(); ++it)
 	{	
-		std::string user = *it;
+		string user = *it;
 		if (!user.compare(username)){
 			usernames_set.erase(it);
 			break;
@@ -340,7 +355,7 @@ bool Server::user_exists(int fd)
 
 bool Server::is_server(int fd)
 {
-	if(neighbors_by_fd.count(fd) == 1)
+	if(neighbors.count(fd) == 1)
 	{
 		return true;
 	}
@@ -350,13 +365,13 @@ bool Server::is_server(int fd)
 /**
  * Get a file descriptor by username
 */
-int Server::get_fd_by_user(std::string username)
+int Server::get_fd_by_user(string username)
 {
 	int fd = -1;
-	std::map<int, std::string>::iterator it;
+	map<int, string>::iterator it;
 	for (it = usernames.begin(); it != usernames.end(); ++it)
 	{
-		std::string user = it->second;
+		string user = it->second;
 		if (!user.compare(username))
 		{		
 			fd = it->first;
@@ -365,7 +380,7 @@ int Server::get_fd_by_user(std::string username)
 	return fd;
 }
 
-void Server::write_to_fd(int fd, std::string message)
+void Server::write_to_fd(int fd, string message)
 {
 	if (socket_utilities::write_to_fd(fd, message) < 0)
 	{
@@ -383,8 +398,8 @@ void Server::disconnect_user(BufferContent& buffer_content)
 	int fd = buffer_content.get_file_descriptor();
 	if (user_exists(fd))
 	{
-		std::string username = usernames.at(buffer_content.get_file_descriptor());
-		std::cout << username <<  " has left" << std::endl;
+		string username = usernames.at(buffer_content.get_file_descriptor());
+		cout << username <<  " has left" << endl;
 		buffer_content.set_body(username + " has left the chat");
 		send_to_all(buffer_content);
 		usernames.erase(buffer_content.get_file_descriptor());
@@ -415,7 +430,7 @@ void Server::service_udp_request(int fd)
 	int read_bytes = recvfrom(udp_port.first, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*) &udp_sender, &sender_length);
 	if (read_bytes > 0)
 	{
-		std::string servers = listservers();
+		string servers = listservers();
 		int n = sendto(fd, servers.c_str(), servers.length(), 0, (struct sockaddr*) &udp_sender, sizeof(udp_sender));
 		if (n < 0)
 		{
@@ -435,7 +450,7 @@ void Server::service_tcp_client_request(int fd)
 {
 	struct sockaddr_in address;
 	int client_fd = accept_connection(fd, address);
-	std::string welcome_message = "Welcome, type HELP for available commands\n";
+	string welcome_message = "Welcome, type HELP for available commands\n";
 	write_to_fd(client_fd, welcome_message);
 	FD_SET(client_fd, &active_set);
 	update_max_fd(client_fd);
@@ -461,26 +476,23 @@ void Server::receive_from_client_or_server(int fd)
 		if (is_server(fd))
 		{
 			// REMOVE SERVER
-			neighbors_by_fd.erase(fd);
+			neighbors.erase(fd);
+			neighbor_connections--;
 		}
 		else 
 		{
 			BufferContent buffer_content;
-			std::string feedback_message;
+			string feedback_message;
 			buffer_content.set_file_descriptor(fd);
 			disconnect_user(buffer_content);
 		}
 	}
 	else 
 	{
-		std::string buff = std::string(buffer);
+		string buff = string(buffer);
 		if (is_server(fd))
 		{
-			//TODO: Check for SOH and EOT tokens
-			//		Parse buffer and remove tokens
-			//		Check if CMD or RSP
-			//		If to == our_id then parse_buffer(COMMAND)
-			//		Else try to find out where to forward.
+			// Remove tokens
 			if (!(buff[0] == SOH) && !(buff[buff.size() - 1] == EOT))
 			{
 				return;
@@ -502,43 +514,53 @@ void Server::fetch_id_from_fd(int fd)
 	if (n > 0)
 	{
 		string_utilities::trim_cstr(buffer);
-		std::string server_id = std::string(buffer);
+		string server_id = string(buffer);
 		// UPDATE SERVER LIST 
-		for(auto it = neighbors_by_fd.begin(); it != neighbors_by_fd.end(); ++it)
+		for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
 		{
 			if (it->first == fd)
 			{
 				// anonymous,127.0.0.1,4001
-				// std::string value = it->second;
-				std::vector<std::string> vec = string_utilities::split_by_delimeter(it->second, ",");
-				it->second = server_id + "," + vec.at(1) + "," + vec.at(2) + ";";
+				// string value = it->second;
+				// vector<string> vec = string_utilities::split_by_delimeter(it->second, ",");
+				// it->second = server_id + "," + vec.at(1) + "," + vec.at(2) + ";";
 			}
 		}
-		// update_server_list(std::string(buffer));
-	}
-
-	for(auto it = neighbors_by_fd.begin() ; it != neighbors_by_fd.end(); ++it)
-	{
-		std::cout << it->second << ", ";
+		// update_server_list(string(buffer));
 	}
 }
 
+bool Server::is_neighbor(string server_id)
+{
+	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if (!it->second.get_id().compare(server_id))
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
+void Server::update_server_port(int port)
+{
+	
+}
 
 /**
  * Execute a command
 */
-void Server::execute_command(BufferContent& buffer_content)
+void Server::execute_command(BufferContent& buffer_content, string from_server_id)
 {	
-	std::string command = buffer_content.get_command();
-	std::string sub_command;
-	std::string feedback_message;
+	string command = buffer_content.get_command();
+	string sub_command;
+	string feedback_message;
 	int fd = buffer_content.get_file_descriptor();
 
-	std::cout << buffer_content.get_file_descriptor() << std::endl;
-	std::cout << buffer_content.get_command() << std::endl;
-	std::cout << buffer_content.get_sub_command() << std::endl;
-	std::cout << buffer_content.get_body() << std::endl;
+	cout << buffer_content.get_file_descriptor() << endl;
+	cout << buffer_content.get_command() << endl;
+	cout << buffer_content.get_sub_command() << endl;
+	cout << buffer_content.get_body() << endl;
 	/* C&C commands */
 	if ((!command.compare("CS")))
 	{
@@ -548,15 +570,15 @@ void Server::execute_command(BufferContent& buffer_content)
 	//TODO: Finish implementing manual fetch id 
 	else if (!command.compare("FETCHID"))
 	{
-		std::cout << command << std::endl;
+		cout << command << endl;
 		sub_command = buffer_content.get_sub_command();
-		std::cout << sub_command << std::endl;
+		cout << sub_command << endl;
 		// struct hostent* h;
-		// std::vector<std::string> host_and_port = string_utilities::split_by_delimeter(sub_command, ",");
+		// vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ",");
 		// if (host_and_port.size() == 2)
 		// {
 		// 	h = gethostbyname(host_and_port.at(0).c_str());
-		// 	std::cout << std::string(h->h_addr) << std::endl;
+		// 	cout << string(h->h_addr) << endl;
 
 		// }
 		// int fd = get_fd_by_host_and_port(string_utilities::trim_string(sub_command));
@@ -567,13 +589,20 @@ void Server::execute_command(BufferContent& buffer_content)
 	else if (!command.compare("LISTSERVERS"))
 	{
 		//TODO: Send listservers to FD
-		std::string servers = listservers();
-		write_to_fd(fd, servers);
+		if (is_server(fd))
+		{	
+			// TODO:: check for tokens and remove
+			string RSP = "RSP," + from_server_id + "," + get_id() + ",LISTSERVERS," + listservers();
+			RSP = string_utilities::wrap_with_tokens(RSP);
+			write_to_fd(fd, RSP);
+		}
+		else { write_to_fd(fd, listservers()); }
 	}
 
 	else if (!command.compare("KEEPALIVE"))
 	{
 		//TODO: Send keepalive to FD
+
 	}
 	
 	else if (!command.compare("LISTROUTES"))
@@ -583,28 +612,42 @@ void Server::execute_command(BufferContent& buffer_content)
 
 	else if (!command.compare("FETCH"))
 	{
-		//TODO:: send Id with number matching stoi(sub_command)
+		if(!string_utilities::is_number(buffer_content.get_sub_command())) { return; }
+		int index = stoi(buffer_content.get_sub_command());
+		
+		if (is_server(fd))
+		{
+			if(index < 1 || index > 5) { return; }
+			string RSP = "RSP," + from_server_id + "," + get_id() + ",FETCH," + hashes.at(index);
+		}
+		else { write_to_fd(fd, hashes.at(index)); }
 	}
 
 	else if (!command.compare("CMD"))
 	{
-		std::vector<std::string> source_and_cmd = string_utilities::split_by_delimeter(buffer_content.get_body(), ",");
-		std::string source = source_and_cmd.at(0);
-		std::string dest = buffer_content.get_sub_command();
-		std::string cmd = source_and_cmd.at(1);
-		
+		// The source_id and command will reside in the body since we are using the same technique as in project 2
+		vector<string> source_and_cmd = string_utilities::split_by_delimeter_stopper(buffer_content.get_body(), ",", 3);
+		// the source_id and a COMMAND are minimum requirements so cannot be less than 2
+		if (source_and_cmd.size() < 2) { return; }
+		string dest = buffer_content.get_sub_command();
+		string source = source_and_cmd.at(0);
+		string cmd = source_and_cmd.at(1);
+		// If 3 then the rest is the sub_command/body for the command so we need to concatenate that to our command and keep the comma
+		if (source_and_cmd.size() == 3)
+		{
+			cmd += "," + source_and_cmd.at(2);
+		}
+		// If we are the recipient or nobody is(then we assume that we are) 
 		if (!(dest.compare(get_id())) || !(dest.compare("")))
 		{
-			// TODO: find FD in our neighbor map and update server_id for that FD
-
-			// execute the cmd requested
-			parse_buffer(cmd, fd);
+			update_server_id(fd, source);		
+			parse_buffer(cmd, fd, source);
 		}
+		// We are not the recipient, forward
 		else
 		{
 			// TODO: Implement
-			//		 Forward command: CMD,toserver,fromserver,COMMAND
-			printf("Find best way to forward command\n");
+			cout << "Forward this CMD!\n";
 		}
 
 
@@ -612,27 +655,64 @@ void Server::execute_command(BufferContent& buffer_content)
 	}
 	else if (!command.compare("RSP"))
 	{
-		//TODO: check if RSP is to go to our neighbor, then write_to_fd(neighborFD, command_response)
-		//		else make best assumption on where to forward the resposne
+		// We are the the destination
+		string dest = buffer_content.get_sub_command();
+		vector<string> dest_cmd_response = string_utilities::split_by_delimeter_stopper(buffer_content.get_body(), ",", 3);
+		if (dest_cmd_response.size() < 2) { return; }
+		string source = dest_cmd_response.at(0);
+		string cmd = dest_cmd_response.at(1);
+		string response = "";
+		if (dest_cmd_response.size() == 3)
+		{
+			response = dest_cmd_response.at(2);
+		}
+
+		if (!dest.compare(get_id()))
+		{
+			if(!cmd.compare("ID"))
+			{
+				vector<string> id_port = string_utilities::split_by_delimeter(response, ",");
+				if (id_port.size() < 2)
+				{
+					update_server_id(fd, id_port.at(0));
+					update_server_port(fd, id_port.at(1));
+				}
+				else
+				{
+					update_server_id(fd, response);
+				}
+			}
+			else if (!cmd.compare("LISTSERVERS"))
+			{
+				// update routing table
+			}
+		}
+		// We are not the destination
+		else {
+			//TODO: forward shit!
+			cout << "Forward this RSP!\n";
+		}
 	}
 
 	else if ((!command.compare("ID"))) 
 	{
-		// If the receiver is a server, it shall RSP the result of the command
+		// If it is a server requesting the ID, we respond with RSP
 		if (is_server(fd))
 		{	
-			//TODO:	Create a global variable which holds info about current to_server_id
-			//		Execute RSP,to_server_id,us,get_id()
-			//		Check if to_server_id is neighbor, else find best suitable option to forward response
-			std::string response = "RSP,";
+			stringstream ss;
+			ss << server_conn_port.first;
+			string RSP = "RSP," + from_server_id + "," + get_id() + ",ID," + get_id() + "," + ss.str();
+			RSP = string_utilities::wrap_with_tokens(RSP);
+			write_to_fd(fd, RSP);
 		}
-		else { write_to_fd(fd, id + "\n"); }
+		// Client requesting ID
+		else { write_to_fd(fd, get_id()); }
 		
 	}
 
 	else if ((!command.compare("CONNECT"))) 
 	{	
-		std::cout << buffer_content.get_sub_command() + buffer_content.get_body() + " has connected" << std::endl;
+		cout << buffer_content.get_sub_command() + buffer_content.get_body() + " has connected" << endl;
 		if (add_user(buffer_content, feedback_message))
 		{
 			// write to all
@@ -660,7 +740,7 @@ void Server::execute_command(BufferContent& buffer_content)
 	{
 		sub_command = buffer_content.get_sub_command();
 		if (user_exists(fd)){
-			std::string sending_user = usernames.at(fd);
+			string sending_user = usernames.at(fd);
 			if (!sub_command.compare("ALL"))
 			{
 				// send to all
@@ -720,24 +800,50 @@ void Server::execute_command(BufferContent& buffer_content)
 
 }
 
+bool Server::response_is_id(string response)
+{
+	// V_Group_
+	string sub = response.substr(0, 7);
+	if ( (!sub.compare("V_Group_")) && response.size() < 11)
+	{
+		return true;
+	}
+	return false;
+}
+
+
+bool Server::response_is_listservers(string response)
+{
+	vector<string> servers = string_utilities::split_by_delimeter(response, ";");
+	for(int i = 0; i < servers.size(); ++i)
+	{
+		vector<string> data = string_utilities::split_by_delimeter(servers.at(i), ",");
+		if (data.size() != 3)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 /**
  * parse the input buffer from the client and execute each command
 */
-void Server::parse_buffer(std::string buffer, int fd)
+void Server::parse_buffer(string buffer, int fd, string from_server_id)
 {
 	/* split input string by \ to get a vector of commands */
-	std::string delimeter = "\\";
-	std::vector<std::string> vector_buffer = string_utilities::split_by_delimeter(std::string(buffer), delimeter);
-	
+	string delimeter = "\\";
+	vector<string> vector_buffer = string_utilities::split_by_delimeter(string(buffer), delimeter);
+	vector<string> commands;
 	/* for each command, assign variables to buffer_content and execute command */
 	for (int i = 0; i < vector_buffer.size(); ++i)
 	{
 		BufferContent buffer_content;
 		buffer_content.set_file_descriptor(fd);
-		std::vector<std::string> commands = string_utilities::split_into_commands_and_body(vector_buffer.at(i));
+		vector<string> commands = string_utilities::split_by_delimeter_stopper(vector_buffer.at(i), ",", 2);
 		for (int j = 0; j < commands.size(); ++j)
 		{
-			std::string cmd = commands.at(j);
+			string cmd = commands.at(j);
 			if (j == 0)
 			{
 				buffer_content.set_command(string_utilities::trim_string(cmd));
@@ -751,7 +857,8 @@ void Server::parse_buffer(std::string buffer, int fd)
 				buffer_content.set_body(string_utilities::trim_string(cmd));
 			}
 		}
-		execute_command(buffer_content);
+		execute_command(buffer_content, from_server_id);
+		
 	}
 }
 

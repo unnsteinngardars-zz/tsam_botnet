@@ -15,7 +15,7 @@ namespace string_utilities
 	void trim_cstr(char* cstr);
 	std::string trim_string(const std::string &s, const std::string &delimiters = " \f\n\r\t\v");
 	std::vector<std::string> split_by_delimeter(std::string string_buffer, std::string delimeter);
-	std::vector<std::string> split_into_commands_and_body(std::string input_string);
+	std::vector<std::string> split_by_delimeter_stopper(std::string input_string, std::string delimeter, int stopper);
 	bool is_number(std::string str);
 	std::string wrap_with_tokens(std::string str);
 }

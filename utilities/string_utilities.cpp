@@ -40,16 +40,14 @@ std::vector<std::string> string_utilities::split_by_delimeter(std::string string
 	return vec;
 }
 
-std::vector<std::string> string_utilities::split_into_commands_and_body(std::string input_string)
+std::vector<std::string> string_utilities::split_by_delimeter_stopper(std::string input_string, std::string delimeter, int stopper)
 {
 	trim_string(input_string);
 	size_t pos = 0;
 	int counter = 0;
 	std::string str;
-	std::vector<std::string> vec;
-	std::string delimeter = ",";
-	
-	while (((pos = input_string.find(delimeter)) != std::string::npos) && counter < 2)
+	std::vector<std::string> vec;	
+	while (((pos = input_string.find(delimeter)) != std::string::npos) && counter < stopper)
 	{
 		str = input_string.substr(0, pos);
 		vec.push_back(str);
