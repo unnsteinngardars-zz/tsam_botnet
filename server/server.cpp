@@ -655,17 +655,17 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		cout << "SERVER\n";
 		command = (!buffer.empty()) ? buffer.at(0) : "";
 		cout << "command: " + command << endl;
-		if(!command.compare("ID"))
+		if(!command.compare("ID") || !command.compare("FETCH"))
 		{	
 			sub_command = (buffer.size() > 1) ? buffer.at(1) : "";
 			cout << "sub_command: " << sub_command << endl;
 		} else{
 			destination_server_id = (buffer.size() > 1) ? buffer.at(1) : "";
+			cout << "destination_server_id : " + destination_server_id << endl;
 		}
 		
 		cout << "source_server_id :" + source_server_id << endl;
 		source_server_id = (buffer.size() > 2) ? buffer.at(2) : "";
-		cout << "destination_server_id : " + destination_server_id << endl;
 		if(!command.compare("CMD")){
 			CMD_command = (buffer.size() > 3) ? buffer.at(3) : "";
 			cout << "CMD_command: " + CMD_command << endl;
@@ -685,7 +685,10 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		cout << "body: " + body << endl;
 		if (!command.compare("CMD") || !command.compare("RSP"))
 		{
-			destination_server_id = sub_command;
+			// Store the client FD to pass down responses from other servers via CMD-RSP
+			requesting_client_fd = fd;
+
+			destination_server_id= sub_command;
 			cout << "destination_server_id : " + destination_server_id << endl;
 			vector<string> body_split = string_utilities::split_by_delimeter_stopper(body, ",", 1);
 			if (body_split.size() > 1)
@@ -765,17 +768,17 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		// We are not the recipient, forward
 		else
 		{
-			//TODO: forward by using routing table!
-			// if(is_neighbor(destination_server_id))
-			// {
-			// 	int fd = get_server_fd_by_id(destination_server_id);
-			// 	if (fd > 0)
-			// 	{
-			// 		string forwarding_command = string_utilities::wrap_with_tokens(unsplitted_buffer);
-			// 		forwarding_command.replace(1,3, "RSP");
-			// 		write_to_fd(fd,forwarding_command);
-			// 	}
-			// }
+			// If it is our neighbor we can pass it along
+			if(is_neighbor(destination_server_id))
+			{
+				int fd = get_server_fd_by_id(destination_server_id);
+				if (fd > 0)
+				{
+					string forwarding_command = string_utilities::wrap_with_tokens(unsplitted_buffer);
+					write_to_fd(fd,forwarding_command);
+				}
+			}
+			// TODO: If not neighbor we need a routing table to find a way to forward
 		}		
 	}
 	else if (!command.compare("RSP"))
@@ -789,45 +792,45 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		{
 			if(!response_command.compare("ID"))
 			{	
+				printf("original client request FD %d\n", requesting_client_fd);
 				vector<string> id_port = string_utilities::split_by_delimeter(response, ",");
 				if (id_port.size() == 2)
 				{
 					update_server_id(fd, id_port.at(0));
 					update_server_port(fd, stoi(id_port.at(1)));
+					string combined_response = id_port.at(0) + "," + id_port.at(1);
+					write_to_fd(requesting_client_fd, combined_response);
 				}
 				else
 				{
 					update_server_id(fd, response);
+					write_to_fd(requesting_client_fd, response);
 				}
+
 			}
 			else if (!response_command.compare("LISTSERVERS"))
 			{
 				// update routing table
+				write_to_fd(requesting_client_fd, response);
+			}
+			else if (!response_command.compare("FETCH"))
+			{
+				write_to_fd(requesting_client_fd, response);
 			}
 		}
 		// We are not the destination
 		else {
-			//TODO: forward by using routing table!
-			// if(is_neighbor(destination_server_id))
-			// {
-			// 	int fd = get_server_fd_by_id(destination_server_id);
-			// 	if (fd > 0)
-			// 	{
-			// 		// string forwarding_response = string_utilities::wrap_with_tokens(unsplitted_buffer);
-			// 		// forwarding_response.replace(0,2,"CMD");
-			// 		vector<string> id_port = string_utilities::split_by_delimeter(response, ",");
-			// 		if (id_port.size() == 2)
-			// 		{
-			// 			string response = id_port.at(0) + "," + id_port.at(1);
-			// 			write_to_fd(fd, response);
-			// 		}
-			// 		else
-			// 		{
-			// 			write_to_fd(fd, response);
-			// 		}
-			// 		// write_to_fd(fd,forwarding_response);
-			// 	}
-			// }
+			// If it is our neighbor we can pass it along
+			if(is_neighbor(destination_server_id))
+			{
+				int fd = get_server_fd_by_id(destination_server_id);
+				if (fd > 0)
+				{
+					string forwarding_response = string_utilities::wrap_with_tokens(unsplitted_buffer);
+					write_to_fd(fd,forwarding_response);
+				}
+			}
+			// TODO: If not neighbor we need a routing table to find a way to forward
 		}
 	}
 
