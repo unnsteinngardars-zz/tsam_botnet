@@ -45,6 +45,7 @@ class Server
 	int MAX_BUFFER_SIZE;
 	int MAX_NEIGHBOUR_CONNECTIONS;
 	int max_file_descriptor;
+	int requesting_client_fd;
 	
 	pair<int, struct sockaddr_in> server_conn_port;
 	pair<int, struct sockaddr_in> client_conn_port;
