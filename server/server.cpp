@@ -39,6 +39,7 @@ Server::Server(int server_p, int client_p, int udp_p, string server_id)
 	max_file_descriptor = server_conn_port.first > client_conn_port.first ? server_conn_port.first : client_conn_port.first;
 	max_file_descriptor = udp_port.first > max_file_descriptor ? udp_port.first : max_file_descriptor;
 	MAX_NEIGHBOUR_CONNECTIONS = 5;
+	neighbor_connections = 0;
 }
 
 
@@ -412,7 +413,6 @@ void Server::connect_to_server(string sub_command)
 	char buffer[32];
 	memset(buffer, 0, 32);
 	string server_id = "anonymous";
-	// string sub_command = buffer_content.get_sub_command();
 	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
 
 	if (host_and_port.size() < 2) { return; }
@@ -452,10 +452,10 @@ void Server::connect_to_server(string sub_command)
 
 	stringstream ss;
 	ss << ntohs(server_conn_port.second.sin_port);
-	string request_id = "CMD,," + get_id() + ",ID," + ss.str() + " ";
+	string request_id = "CMD,," + get_id() + ",ID," + ss.str();
 	request_id = string_utilities::wrap_with_tokens(request_id);
-	write_to_fd(fd, request_id);
 	add_to_serverlist(fd, address, server_id);
+	write_to_fd(fd, request_id);
 }
 
 /**
@@ -466,6 +466,18 @@ void Server::service_tcp_server_request(int fd)
 	struct sockaddr_in address;
 	int server_fd = accept_connection(fd, address);
 	accept_incomming_server(server_fd, address);
+}
+
+int Server::get_server_fd_by_id(string id)
+{
+	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		if(!it->second.get_id().compare(id))
+		{
+			return it->second.get_fd();
+		}
+	}
+	return -1;
 }
 
 
@@ -597,7 +609,7 @@ void Server::receive_from_client_or_server(int fd)
 			string_utilities::trim_string(buff);
 		}
 		vector_buffer = parse_buffer(buff, fd);
-		execute_command(fd, vector_buffer);
+		execute_command(fd, vector_buffer, "", buff);
 	}
 }
 
@@ -622,8 +634,9 @@ vector<string> Server::parse_buffer(string buffer, int fd)
 /**
  * Execute a command
 */
-void Server::execute_command(int fd, vector<string> buffer, string from_server_id)
+void Server::execute_command(int fd, vector<string> buffer, string from_server_id, string unsplitted_buffer)
 {	
+	cout << "UNSPLITTED " << unsplitted_buffer << endl;
 	string feedback_message = "";
 	string command = "";
 	string sub_command = "";
@@ -748,8 +761,17 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		// We are not the recipient, forward
 		else
 		{
-			// TODO: Implement
-			cout << "Forward this CMD!\n";
+			//TODO: forward by using routing table!
+			// if(is_neighbor(destination_server_id))
+			// {
+			// 	int fd = get_server_fd_by_id(destination_server_id);
+			// 	if (fd > 0)
+			// 	{
+			// 		string forwarding_command = string_utilities::wrap_with_tokens(unsplitted_buffer);
+			// 		forwarding_command.replace(1,3, "RSP");
+			// 		write_to_fd(fd,forwarding_command);
+			// 	}
+			// }
 		}		
 	}
 	else if (!command.compare("RSP"))
@@ -781,8 +803,27 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 		}
 		// We are not the destination
 		else {
-			//TODO: forward shit!
-			cout << "Forward this RSP!\n";
+			//TODO: forward by using routing table!
+			// if(is_neighbor(destination_server_id))
+			// {
+			// 	int fd = get_server_fd_by_id(destination_server_id);
+			// 	if (fd > 0)
+			// 	{
+			// 		// string forwarding_response = string_utilities::wrap_with_tokens(unsplitted_buffer);
+			// 		// forwarding_response.replace(0,2,"CMD");
+			// 		vector<string> id_port = string_utilities::split_by_delimeter(response, ",");
+			// 		if (id_port.size() == 2)
+			// 		{
+			// 			string response = id_port.at(0) + "," + id_port.at(1);
+			// 			write_to_fd(fd, response);
+			// 		}
+			// 		else
+			// 		{
+			// 			write_to_fd(fd, response);
+			// 		}
+			// 		// write_to_fd(fd,forwarding_response);
+			// 	}
+			// }
 		}
 	}
 

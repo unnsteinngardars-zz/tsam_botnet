@@ -81,6 +81,7 @@ class Server
 	void accept_incomming_server(int fd, struct sockaddr_in& address);
 	void connect_to_server(string sub_command);
 	void service_tcp_server_request(int fd);
+	int get_server_fd_by_id(string id);
 
 	/* Client/Server connection related methods */
 	void write_to_fd(int fd, string message);
@@ -90,7 +91,7 @@ class Server
 	void service_udp_request(int fd);
 	void receive_from_client_or_server(int fd);
 	vector<string> parse_buffer(string buffer, int fd);
-	void execute_command(int fd, vector<string> buffer, string from_server_id = "");
+	void execute_command(int fd, vector<string> buffer, string from_server_id = "", string unsplitted_buffer = "");
 	
   public:
 	Server(int server_p, int client_p, int udp_p, string server_id);
