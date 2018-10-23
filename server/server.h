@@ -81,8 +81,10 @@ class Server
 	void update_server_port(int fd, int port);
 	void accept_incomming_server(int fd, struct sockaddr_in& address);
 	void connect_to_server(string sub_command);
+	void disconnect_server(int fd);
 	void service_tcp_server_request(int fd);
 	int get_server_fd_by_id(string id);
+	void send_keepalive(int fd);
 
 	/* Client/Server connection related methods */
 	void write_to_fd(int fd, string message);

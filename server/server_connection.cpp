@@ -43,3 +43,22 @@ int ServerConnection::get_port()
     return port;
 }
 
+time_t ServerConnection::get_time_sent()
+{
+    return last_keepalive_sent;
+}
+
+void ServerConnection::update_keep_sent()
+{
+    last_keepalive_sent = time(0);
+}
+
+time_t ServerConnection::get_time_recieved()
+{
+    return last_keepalive_recieved;
+}
+
+void ServerConnection::update_keep_recieved()
+{
+    last_keepalive_recieved = time(0);
+}

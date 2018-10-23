@@ -334,6 +334,8 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string serve
 	stringstream ss;
 	ss << ntohs(address.sin_port);
 	ServerConnection server_connection = ServerConnection();
+	server_connection.update_keep_sent();
+	server_connection.update_keep_recieved();
 	server_connection.set_fd(fd);
 	server_connection.set_id(server_id);
 	server_connection.set_host(string(inet_ntoa(address.sin_addr)));
@@ -484,6 +486,17 @@ int Server::get_server_fd_by_id(string id)
 	return -1;
 }
 
+/*
+Disconnect a server
+*/
+void Server::disconnect_server(int fd)
+{
+	cout << "server fd " << fd << " disconnected" << endl;
+	close(fd);
+	FD_CLR(fd, &active_set);
+	neighbors.erase(fd);
+	neighbor_connections--;
+}
 
 /**
  * CLIENT/SERVER CONNECTION RELATED METHODS
@@ -590,8 +603,9 @@ void Server::receive_from_client_or_server(int fd)
 		if (is_server(fd))
 		{
 			// REMOVE SERVER
-			neighbors.erase(fd);
-			neighbor_connections--;
+			disconnect_server(fd);
+			//neighbors.erase(fd);
+			//neighbor_connections--;
 		}
 		else 
 		{
@@ -730,8 +744,16 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 
 	else if (!command.compare("KEEPALIVE"))
 	{
-		//TODO: Send keepalive to FD
-
+		//Recieved KEEPALIVE
+		if(is_server(fd))
+		{
+			//Update our keepalive recieved time
+			auto find_server = neighbors.find(fd);
+			if(find_server != neighbors.end())
+			{
+				find_server->second.update_keep_recieved();
+			}
+		}
 	}
 	
 	else if (!command.compare("LISTROUTES"))
@@ -952,7 +974,19 @@ void Server::execute_command(int fd, vector<string> buffer, string from_server_i
 
 }
 
-
+void Server::send_keepalive(int fd)
+{
+	auto find_server = neighbors.find(fd);
+	if(find_server != neighbors.end())
+	{
+		ServerConnection* serv = &find_server->second;
+		string ser_id = serv->get_id();
+		string send_keep = "CMD," + ser_id + "," + get_id() + ",KEEPALIVE";
+		send_keep = string_utilities::wrap_with_tokens(send_keep);
+		write_to_fd(fd, send_keep);
+		serv->update_keep_sent();
+	}
+}
 
 
 
@@ -1006,6 +1040,30 @@ int Server::run()
 					receive_from_client_or_server(i);
 				}
 
+			}
+			
+			if(is_server(i))
+			{
+				//timeout check
+				auto find_server = neighbors.find(i);
+				if(find_server != neighbors.end())
+				{
+					//found the server
+					ServerConnection* serv = &find_server->second;
+					time_t now = time(0);
+					//cout << "TIME SINCE LAST KEEPALIVE SENT: " << now - serv->get_time_sent() << std::endl;
+					//cout << "TIME SINCE LAST KEEPALIVE RECI: " << now - serv->get_time_recieved() << std::endl;
+					if(now - serv->get_time_recieved() >= 10)
+					{
+						//Disconnect
+						disconnect_server(i);
+					}
+					else if(now - serv->get_time_sent() >= 5)
+					{
+						//Send KEEPALIVE
+						send_keepalive(i);
+					}
+				}
 			}
 		}
 	}
