@@ -61,14 +61,18 @@ string Server::get_id()
 void Server::display_commands(int fd)
 {
 	string help_message = "\nAvailable commands are:\n\n";
-	help_message += "ID\t\tGet the ID of the server\n";
-	help_message += "CHANGE ID\t\tChange the ID of the server\n";
-	help_message += "CONNECT <username>\tIdentify yourself with username, cannot include space\n";
+	help_message += "ID\t\t\tGet the ID of the server\n";
+	//help_message += "CHANGE ID\t\tChange the ID of the server\n";
+	help_message += "CONNECT,<username>\tIdentify yourself with username, cannot include space\n";
+	help_message += "CS,<host>:<port>\tConnect to another server\n";
+	help_message += "LISTSERVERS\t\tLists connected servers\n";
 	help_message += "LEAVE\t\t\tLeave chatroom\n";
 	help_message += "WHO\t\t\tGet list of connected users\n";
-	help_message += "MSG <user> <message>\tSend a message to specific user\n";
-	help_message += "MSG ALL <message>\tSend message to all users connected\n";
+	help_message += "MSG,<user>,<message>\tSend a message to specific user\n";
+	help_message += "MSG,ALL,<message>\tSend message to all users connected\n";
 	help_message += "HELP\t\t\tSe available commands\n\n";
+	help_message += "Not implemented things:\n";
+	help_message += "LISTROUTES\n";
 	write_to_fd(fd, help_message);
 }
 

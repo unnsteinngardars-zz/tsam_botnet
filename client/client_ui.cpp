@@ -91,7 +91,6 @@ int ClientUI::CheckMessages()
         }
         if(FD_ISSET(stdin_sock, &readfds))
         {
-            string testicles = "";
             switch(int c = getch())
             {
                 case ERR: break;
@@ -301,10 +300,12 @@ void ClientUI::Start()
     _paddington = string(_width - 2, '-');
     
     //Some helpful messages to get you started
-    _messages.push_back("!!!DO NOT USE NAMES !!! USE IP ADDRESSES!!!");
-    _messages.push_back("The ports will be knocked on in the order given");
-    _messages.push_back("in the format \"ipaddress port1 port2 port3\"");
-    _messages.push_back("Please input an IP address and ports to knock on");
+    //_messages.push_back("!!!DO NOT USE NAMES !!! USE IP ADDRESSES!!!");
+    //_messages.push_back("The ports will be knocked on in the order given");
+    //_messages.push_back("in the format \"ipaddress port1 port2 port3\"");
+    _messages.push_back("Type HELP to recieve a list of supported commands");
+    _messages.push_back("Once connected, type \"CONNECT,<name>\" to register on the server.");
+    _messages.push_back("Please input server details in the form \"ipaddress port\"");
     _messages.push_back("Welcome to the best chat client ever");
 
     string connection_info;
