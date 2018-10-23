@@ -63,7 +63,7 @@ std::vector<std::string> string_utilities::split_by_delimeter_stopper(std::strin
 */
 bool string_utilities::is_number(std::string str)
 {
-	for(int i = 0; i < str.size(); ++i)
+	for(unsigned int i = 0; i < str.size(); ++i)
 	{
 		if (!isdigit((char)str[i]))
 		{
