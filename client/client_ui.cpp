@@ -320,16 +320,29 @@ void ClientUI::Start()
         if(connection_info == "quit") break;
         //Get our input in a nicer format
         exploded = explode(connection_info, ' ');
-        
+        if(exploded.size() < 2)
+        {
+            _messages.insert(_messages.begin(), "Invalid connection string.");
+            _messages.insert(_messages.begin(), "ipaddress port [port2, port3,...,portn]");
+            continue;
+        }
         string host = exploded[0];
         exploded.erase(exploded.begin());
         
         vector<int> ports;
+        bool fail = false;
         for(string i : exploded)
         {
-            ports.push_back(stoi(i));
+            if(string_utilities::is_number(i))
+                ports.push_back(stoi(i));
+            else
+            {
+                _messages.insert(_messages.begin(), "Invalid port " + i + ". Please try again.");
+                fail = true;
+                break;
+            }
         }
-        
+        if(fail) continue;
         _messages.insert(_messages.begin(), "Attempting to connect...");
         if(ports.size() == 1)
             _c = Client(host, ports[0]);
