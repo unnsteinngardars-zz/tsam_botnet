@@ -91,6 +91,7 @@ class Server
 	void disconnect_server(int fd);
 	void service_tcp_server_request(int fd);
 	int get_server_fd_by_id(string id);
+	void clear_routing_table();
 	void run_scheduled_tasks();
 	void send_keepalive(int fd);
 	void send_keepalive_to_all();

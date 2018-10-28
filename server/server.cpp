@@ -747,12 +747,20 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 	else if (!command.compare("KEEPALIVE"))
 	{
 		// TODO: update keepalive stopwatch for sending server
+
 		
 	}
 	
 	else if (!command.compare("LISTROUTES"))
 	{
 		//TODO:: send routing table to FD
+		if (is_server(fd))
+		{
+			string RSP = "RSP," + from_server_id + "," + get_id() + ",LISTROUTES," + routing_table.to_string();
+			RSP = string_utilities::wrap_with_tokens(RSP);
+			write_to_fd(fd, RSP);
+		}
+		else { write_to_fd(fd, routing_table.to_string()); }
 	}
 
 	else if (!command.compare("FETCH"))
@@ -811,7 +819,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 
 		if (!destination_server_id.compare(get_id()))
 		{
-			cout << "returned response: " << response << " from server " << source_server_id << endl;
+			// cout << "returned response: " << response << " from server " << source_server_id << endl;
 			if(!response_command.compare("ID"))
 			{	
 				vector<string> id_ip_port = string_utilities::split_by_delimeter(response, ",");
@@ -985,23 +993,34 @@ void Server::send_keepalive(int fd)
 	}
 }
 
+void Server::clear_routing_table()
+{
+	cout << "CLEAR ROUTING TABLE" << endl;
+	routing_table.clear();
+	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+
+		routing_table.add(it->second.get_id(), it->second.get_id());
+	}
+	clear_routes_timer.reset();
+}
+
 void Server::run_scheduled_tasks()
 {
 	if(keepalive_timer.elapsed(60))
 	{
 		send_keepalive_to_all();
-		keepalive_timer.reset();
+		
 	}
 
 	if(routing_table_timer.elapsed(30))
 	{
 		update_routes();
-		routing_table_timer.reset();
+		
 	}
-
-	if(clear_routes_timer.elapsed(60*4))
+	if(clear_routes_timer.elapsed(60*2))
 	{
-		routing_table.clear();
+		clear_routing_table();
 	}
 }
 
@@ -1011,6 +1030,7 @@ void Server::send_keepalive_to_all()
 	{
 		send_keepalive(it->first);
 	}
+	keepalive_timer.reset();
 }
 
 void Server::update_routes()
@@ -1025,6 +1045,7 @@ void Server::update_routes()
 			write_to_fd(fd, request_listservers);
 		}
 	}
+	routing_table_timer.reset();
 }
 
 

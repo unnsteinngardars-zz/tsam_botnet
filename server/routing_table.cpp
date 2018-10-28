@@ -51,12 +51,57 @@ void RoutingTable::clear()
 
 string RoutingTable::to_string()
 {
-    string keys;
+    if (table.empty()) { return my_id + ":"; }
+    string str = "";
+    for (int i = 0; i < my_id.length(); ++i)
+    {
+        str += " ";
+    }
+    str += " ";
+    str += my_id + ":";
+
     for(auto it = table.begin(); it != table.end(); ++it)
     {
-        keys += it->first + " ";
+        str += it->first + ":";
+        for(int i = 1; i < it->second.size(); ++i)
+        {
+            for(int j = 0; j < it->second.at(i).size(); ++j)
+            {
+                str += " ";
+            }
+        }
     }
-    return keys;
+    str += "\n";
+    str += my_id + ":";
+    str += "-:";
+    for (int i = 0; i < my_id.length() - 1; ++i)
+    {
+        str += " ";
+    }
+
+    for(auto it = table.begin(); it != table.end(); ++it)
+    {
+        if (it->second.empty())
+        {
+            str += my_id;
+        }
+        else
+        {
+            for(int i = 0; i < it->second.size(); ++i)
+            {
+                if (i == it->second.size() - 1)
+                {
+                    str += it->second.at(i);
+                }
+                else
+                {
+                    str += it->second.at(i) + "-";
+                }
+            }
+        }
+        str += ":";
+    }
+    return str += "\t" + time_utilities::get_time_stamp();
 }
 
 vector<host_pair_t> RoutingTable::get_hosts()
