@@ -2,7 +2,7 @@
 
 /**
  * Initialize a Server with a tcp and udp port
- * TODO: Remove client_p and server_id and hardcode! ALTER entry.cpp to comply
+ * TODO: when handing in, remove client_p and server_id
 */
 Server::Server(int server_p, int client_p, int udp_p, string server_id)
 {
@@ -402,7 +402,8 @@ void Server::connect_to_server(string sub_command)
 	string host = host_and_port.at(0);
 	int port = stoi(host_and_port.at(1));
 	// prevent connecting to ourselves
-	if (port == ntohs(server_conn_port.second.sin_port))
+	// TODO: remove magic strings localhost and 127.0.0.1
+	if (port == ntohs(server_conn_port.second.sin_port) && (!host.compare("localhost") || !host.compare("127.0.0.1")))
 	{
 		printf("Cannot connect to oneself mate :)\n");
 		return;
@@ -708,14 +709,11 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 
 	else if (!command.compare("KEEPALIVE"))
 	{
-		// TODO: update keepalive stopwatch for sending server
-
-		
+		// TODO: update keepalive stopwatch for sending server		
 	}
 	
 	else if (!command.compare("LISTROUTES"))
 	{
-		//TODO:: send routing table to FD
 		if (is_neighbor(fd))
 		{
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",LISTROUTES," + routing_table.to_string();
