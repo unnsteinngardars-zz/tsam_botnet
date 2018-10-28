@@ -18,6 +18,11 @@ void ServerConnection::set_host(std::string h)
     host = h;
 }
 
+void ServerConnection::set_ip(std::string i)
+{
+    ip = i;
+}
+
 void ServerConnection::set_port(int p)
 {
     port = p;
@@ -36,6 +41,11 @@ std::string ServerConnection::get_id()
 std::string ServerConnection::get_host()
 {
     return host;
+}
+
+std::string ServerConnection::get_ip()
+{
+    return ip;
 }
 
 int ServerConnection::get_port()

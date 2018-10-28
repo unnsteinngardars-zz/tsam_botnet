@@ -10,6 +10,7 @@ class ServerConnection{
     int fd;
     std::string id;
     std::string host;
+    std::string ip;
     int port;
     time_t last_keepalive_sent;
     time_t last_keepalive_recieved;
@@ -18,6 +19,7 @@ class ServerConnection{
     int get_fd();
     std::string get_id();
     std::string get_host();
+    std::string get_ip();
     int get_port();
     time_t get_time_sent();
     time_t get_time_recieved();
@@ -28,6 +30,7 @@ class ServerConnection{
     void set_fd(int f);
     void set_id(std::string i);
     void set_host(std::string h);
+    void set_ip(std::string i);
     void set_port(int p);
 };
 

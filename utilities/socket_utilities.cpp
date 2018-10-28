@@ -101,10 +101,6 @@ void socket_utilities::listen_on_socket(int fd)
 int socket_utilities::write_to_fd(int fd, std::string message)
 {
 	int write_bytes = send(fd, message.c_str(), message.size(), 0);
-	if (write_bytes < 0)
-	{
-		printf("errno: %d\n",errno);
-	}
 	return write_bytes;
 }
 
