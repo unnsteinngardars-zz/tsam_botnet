@@ -12,7 +12,7 @@ Server::Server(int server_p, int client_p, int udp_p, string server_id)
 	hashes.insert(Pair(4, "6864f389d9876436bc8778ff071d1b6c"));
 	hashes.insert(Pair(5, "ca23ba209cc33678530392b7197fda4d"));
 
-	id = server_id; // might later take in argv[0] from main and assign
+	id = server_id;
 	FD_ZERO(&active_set);
 	struct sockaddr_in s;
 	struct sockaddr_in c;
@@ -242,38 +242,6 @@ bool Server::is_server_in_list(int port)
 	return false;
 }
 
-/**
- * Check if the response is ID
- * depricated!
-*/
-bool Server::response_is_id(string response)
-{
-	// V_Group_
-	string sub = response.substr(0, 7);
-	if ( (!sub.compare("V_Group_")) && response.size() < 11)
-	{
-		return true;
-	}
-	return false;
-}
-
-/**
- * Check if the response is listservers
- * depricated!
-*/
-bool Server::response_is_listservers(string response)
-{
-	vector<string> servers = string_utilities::split_by_delimeter(response, ";");
-	for(unsigned int i = 0; i < servers.size(); ++i)
-	{
-		vector<string> data = string_utilities::split_by_delimeter(servers.at(i), ",");
-		if (data.size() != 3)
-		{
-			return false;
-		}
-	}
-	return true;
-}
 
 /**
  * Check if the server id is our neighbor
@@ -293,7 +261,7 @@ bool Server::is_neighbor(string server_id)
 /**
  * Check if the FD is a neighbor
 */
-bool Server::is_server(int fd)
+bool Server::is_neighbor(int fd)
 {
 	if(neighbors.count(fd) == 1)
 	{
@@ -331,6 +299,8 @@ string Server::listservers()
 */
 void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string server_id)
 {
+	FD_SET(fd, &active_set);
+	update_max_fd(fd);
 	stringstream ss;
 	ss << ntohs(address.sin_port);
 	ServerConnection server_connection = ServerConnection();
@@ -345,6 +315,9 @@ void Server::add_to_serverlist(int fd, struct sockaddr_in& address, string serve
 	neighbor_connections++;
 }
 
+/**
+ * Update a neighbor's id, ip and port
+*/
 void Server::update_neighbor(int fd, string id, string ip, int port)
 {
 	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
@@ -359,9 +332,9 @@ void Server::update_neighbor(int fd, string id, string ip, int port)
 }
 
 /**
- * Update ID for neighbor server
+ * Update a neighbor's id
 */
-void Server::update_server_id(int fd, string new_id)
+void Server::update_neighbor_id(int fd, string new_id)
 {
 	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
 	{
@@ -374,22 +347,10 @@ void Server::update_server_id(int fd, string new_id)
 	}
 }
 
-/**
- * Update port for neighbor server
-*/
-void Server::update_server_port(int fd, int port)
-{
-	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
-	{
-		if (it->first == fd)
-		{
-			it->second.set_port(port);
-		}
-	}
-}
 
 /**
  * Accept incomming server connection from another server
+ * If maximium neighbors exceeded, then we do not accept
 */
 void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 {
@@ -397,8 +358,8 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 	if(neighbor_connections < MAX_NEIGHBOUR_CONNECTIONS)
 	{
 		// send ID to incomming server
-		FD_SET(fd, &active_set);
-		update_max_fd(fd);
+		// FD_SET(fd, &active_set);
+		// update_max_fd(fd);
 		string server_id = "anonymous";
 		// string server_id = retreive_id(fd);
 		string request_id = "CMD,," + get_id() + ",ID";
@@ -421,7 +382,7 @@ void Server::accept_incomming_server(int fd, struct sockaddr_in& address)
 */
 void Server::connect_to_server(string sub_command)
 {
-
+	// Check if we have an open slot
 	if (neighbor_connections == MAX_NEIGHBOUR_CONNECTIONS)
 	{
 		printf("Server has reached maximum neighbor threshold\n");
@@ -433,22 +394,22 @@ void Server::connect_to_server(string sub_command)
 	memset(buffer, 0, 32);
 	string server_id = "anonymous";
 	vector<string> host_and_port = string_utilities::split_by_delimeter(sub_command, ":");
-
+	// Check for correctness of ip:port format of argument
 	if (host_and_port.size() < 2) { return; }
+	// check if port is a number
 	if (!string_utilities::is_number(host_and_port.at(1))) { return; }
 
 	string host = host_and_port.at(0);
 	int port = stoi(host_and_port.at(1));
-
+	// prevent connecting to ourselves
 	if (port == ntohs(server_conn_port.second.sin_port))
 	{
 		printf("Cannot connect to oneself mate :)\n");
 		return;
 	}
-
+	// check if it is already our neighbor
 	if (is_server_in_list(port)) { return; }
-
-	// create FD for new connection
+	// setup connection arguments
 	fd = socket_utilities::create_tcp_socket(false);
 	struct sockaddr_in address;
 	struct hostent* h;
@@ -464,13 +425,12 @@ void Server::connect_to_server(string sub_command)
 		close(fd);
 		return;
 	}
-	FD_SET(fd, &active_set);
-	update_max_fd(fd);
+	// FD_SET(fd, &active_set);
+	// update_max_fd(fd);
 
 	printf("Connection established to server %s:%d with fd %d\n", host.c_str(), port, fd);
 
-	// stringstream ss;
-	// ss << ntohs(server_conn_port.second.sin_port);
+	// prepare and send the ID command to server
 	string request_id = "CMD,," + get_id() + ",ID";
 	request_id = string_utilities::wrap_with_tokens(request_id);
 	add_to_serverlist(fd, address, server_id);
@@ -487,7 +447,10 @@ void Server::service_tcp_server_request(int fd)
 	accept_incomming_server(server_fd, address);
 }
 
-int Server::get_server_fd_by_id(string id)
+/**
+ * Get the neighbor file descriptor by it's id
+*/
+int Server::get_neighbor_fd_by_id(string id)
 {
 	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
 	{
@@ -500,7 +463,7 @@ int Server::get_server_fd_by_id(string id)
 }
 
 /*
-Disconnect a server
+ *	Disconnect a server
 */
 void Server::disconnect_server(int fd)
 {
@@ -532,7 +495,7 @@ void Server::write_to_fd(int fd, string message)
 		{
 			// FD_CLR(fd, &active_set);
 			// close(fd);
-			if(is_server(fd))
+			if(is_neighbor(fd))
 			{
 				cout << "disconnecting server" << endl;
 				disconnect_server(fd);
@@ -630,12 +593,10 @@ void Server::receive_from_client_or_server(int fd)
 	/* client/server disconnects friendly without using the LEAVE command*/
 	else if (read_bytes == 0)
 	{
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{
 			// REMOVE SERVER
 			disconnect_server(fd);
-			//neighbors.erase(fd);
-			//neighbor_connections--;
 		}
 		else 
 		{
@@ -647,7 +608,7 @@ void Server::receive_from_client_or_server(int fd)
 	else 
 	{
 		string buff = string(buffer);
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{
 			if (!(buff[0] == SOH) && !(buff[buff.size() - 1] == EOT))
 			{
@@ -657,7 +618,6 @@ void Server::receive_from_client_or_server(int fd)
 			buff = buff.substr(1, buff.size() - 2);
 			string_utilities::trim_string(buff);
 		}
-		// vector_buffer = parse_buffer(buff, fd);
 		execute_command(fd, buff, "");
 	}
 }
@@ -665,6 +625,8 @@ void Server::receive_from_client_or_server(int fd)
 
 /**
  * Execute a command
+ * Parses the buffer and assigns commands / sub commands and messages to variables
+ * Then it checks which command to execute and executes it
 */
 void Server::execute_command(int fd, string buffer, string from_server_id)
 {	
@@ -734,7 +696,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 	/* Client/Server Commands */
 	else if (!command.compare("LISTSERVERS"))
 	{
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{	
 			// TODO:: check for tokens and remove
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",LISTSERVERS," + listservers();
@@ -754,7 +716,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 	else if (!command.compare("LISTROUTES"))
 	{
 		//TODO:: send routing table to FD
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",LISTROUTES," + routing_table.to_string();
 			RSP = string_utilities::wrap_with_tokens(RSP);
@@ -769,7 +731,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 		if(!string_utilities::is_number(sub_command)) { return; }
 		int index = stoi(sub_command);
 		if(index < 1 || index > 5) { return; }
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",FETCH," + hashes.at(index);
 			RSP = string_utilities::wrap_with_tokens(RSP);
@@ -785,7 +747,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 	{
 		if (!(destination_server_id.compare(get_id())) || !(destination_server_id.compare("")))
 		{
-			update_server_id(fd, source_server_id);
+			update_neighbor_id(fd, source_server_id);
 			// vector<string> new_buffer = parse_buffer(CMD_command, fd);
 			execute_command(fd, CMD_command, source_server_id);
 		}
@@ -799,7 +761,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 				{
 					if (is_neighbor(pair.second))
 					{
-						int fd = get_server_fd_by_id(pair.second);
+						int fd = get_neighbor_fd_by_id(pair.second);
 						if (fd > 0)
 						{
 							string forwarding = string_utilities::wrap_with_tokens(buffer);
@@ -819,7 +781,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 
 		if (!destination_server_id.compare(get_id()))
 		{
-			// cout << "returned response: " << response << " from server " << source_server_id << endl;
+			cout << "returned response: " << response << " from server " << source_server_id << endl;
 			if(!response_command.compare("ID"))
 			{	
 				vector<string> id_ip_port = string_utilities::split_by_delimeter(response, ",");
@@ -830,7 +792,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 					int port = stoi(id_ip_port.at(2));
 					update_neighbor(fd, id, ip, port);
 					routing_table.add(string_utilities::trim_string(source_server_id), id);
-					cout << routing_table.to_string() << endl;
+					// cout << routing_table.to_string() << endl;
 				}
 			}
 
@@ -845,7 +807,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 						routing_table.add(string_utilities::trim_string(source_server_id), server.at(0));
 					}
 				}
-				cout << routing_table.to_string() << endl;
+				// cout << routing_table.to_string() << endl;
 			}
 
 			else if (!response_command.compare("FETCH"))
@@ -861,7 +823,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 				{
 					if (is_neighbor(pair.second))
 					{
-						int fd = get_server_fd_by_id(pair.second);
+						int fd = get_neighbor_fd_by_id(pair.second);
 						if (fd > 0)
 						{
 							string forwarding = string_utilities::wrap_with_tokens(buffer);
@@ -876,12 +838,11 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 	else if (!command.compare("ID"))
 	{
 		// If it is a server requesting the ID, we respond with RSP
-		if (is_server(fd))
+		if (is_neighbor(fd))
 		{
-			// update_server_port(fd, stoi(sub_command));
 			stringstream ss;
 			ss << ntohs(server_conn_port.second.sin_port);
-			// TODO: Change public IP address when on skel!
+			// TODO: Change public IP address if to run on on skel!
 			string RSP = "RSP," + from_server_id + "," + get_id() + ",ID," + get_id() + ",89.160.128.13," + ss.str();
 			RSP = string_utilities::wrap_with_tokens(RSP);
 			write_to_fd(fd, RSP);
@@ -971,7 +932,7 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 
 	else
 	{
-		if (!is_server(fd))
+		if (!is_neighbor(fd))
 		{
 			feedback_message = "Unknown command, type HELP for commands\n";
 			write_to_fd(fd, feedback_message);
@@ -980,6 +941,9 @@ void Server::execute_command(int fd, string buffer, string from_server_id)
 
 }
 
+/**
+ * Send a keepalive to a fd
+*/
 void Server::send_keepalive(int fd)
 {
 	auto find_server = neighbors.find(fd);
@@ -993,24 +957,66 @@ void Server::send_keepalive(int fd)
 	}
 }
 
+/**
+ * Clear the routing table
+*/
 void Server::clear_routing_table()
 {
-	cout << "CLEAR ROUTING TABLE" << endl;
 	routing_table.clear();
 	for (auto it = neighbors.begin(); it != neighbors.end(); ++it)
 	{
-
 		routing_table.add(it->second.get_id(), it->second.get_id());
 	}
 	clear_routes_timer.reset();
 }
 
+/**
+ * Send keepalive to all neighbors
+*/
+void Server::send_keepalive_to_all()
+{
+	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	{
+		send_keepalive(it->first);
+	}
+	keepalive_timer.reset();
+}
+
+/**
+ * Update our routing table
+*/
+void Server::update_routes()
+{
+	for(host_pair_t pair : routing_table.get_hosts())
+	{
+		string request_listservers = "CMD," + pair.first + "," + get_id() + ",LISTSERVERS";
+		request_listservers = string_utilities::wrap_with_tokens(request_listservers);
+		int fd = get_neighbor_fd_by_id(pair.second);
+		if (fd > 0)
+		{
+			write_to_fd(fd, request_listservers);
+		}
+	}
+	routing_table_timer.reset();
+}
+
+/**
+ * Print the routing table
+*/
+void Server::print_routing_status()
+{
+	cout << routing_table.to_string();
+	print_routes_timer.reset();
+}
+
+/**
+ * Runs all scheduled tasks
+*/
 void Server::run_scheduled_tasks()
 {
 	if(keepalive_timer.elapsed(60))
 	{
 		send_keepalive_to_all();
-		
 	}
 
 	if(routing_table_timer.elapsed(30))
@@ -1022,33 +1028,11 @@ void Server::run_scheduled_tasks()
 	{
 		clear_routing_table();
 	}
-}
-
-void Server::send_keepalive_to_all()
-{
-	for(auto it = neighbors.begin(); it != neighbors.end(); ++it)
+	if(print_routes_timer.elapsed(60))
 	{
-		send_keepalive(it->first);
+		print_routing_status();
 	}
-	keepalive_timer.reset();
 }
-
-void Server::update_routes()
-{
-	for(host_pair_t pair : routing_table.get_hosts())
-	{
-		string request_listservers = "CMD," + pair.first + "," + get_id() + ",LISTSERVERS";
-		request_listservers = string_utilities::wrap_with_tokens(request_listservers);
-		int fd = get_server_fd_by_id(pair.second);
-		if (fd > 0)
-		{
-			write_to_fd(fd, request_listservers);
-		}
-	}
-	routing_table_timer.reset();
-}
-
-
 
 
 /**
@@ -1067,6 +1051,7 @@ int Server::run()
 	keepalive_timer.start();
 	routing_table_timer.start();
 	clear_routes_timer.start();
+	print_routes_timer.start();
 	while (1)
 	{
 		/* copy active_set to read_set to not loose information about active_set status since select alters the set passed as argument */
@@ -1104,6 +1089,7 @@ int Server::run()
 		}
 		run_scheduled_tasks();
 	}
+	sleep(1);
 	return 0;
 }
 

@@ -38,11 +38,16 @@ class Server
 	/* Variables */
 	map<int, ServerConnection> neighbors;
 	map<int, string> usernames;
+	map<int, string> hashes;
 	set<string> usernames_set;
-	string id;
+	
 	fd_set active_set;
+	
+	string id;
+	
 	char SOH = '\x01';
 	char EOT = '\x04';
+
 	int neighbor_connections;
 	int MAX_BUFFER_SIZE;
 	int MAX_NEIGHBOUR_CONNECTIONS;
@@ -51,11 +56,12 @@ class Server
 	StopWatch keepalive_timer;
 	StopWatch routing_table_timer;
 	StopWatch clear_routes_timer;
+	StopWatch print_routes_timer;
 
 	pair<int, struct sockaddr_in> server_conn_port;
 	pair<int, struct sockaddr_in> client_conn_port;
 	pair<int, struct sockaddr_in> udp_port;
-	map<int, string> hashes;
+	
 	RoutingTable routing_table;
 
 	/* Methods */
@@ -77,25 +83,23 @@ class Server
 
 	/* Connected server related methods */
 	bool is_server_in_list(int port);
-	bool response_is_id(string response);
-	bool response_is_listservers(string response);
 	bool is_neighbor(string server_id);
-	bool is_server(int fd);
+	bool is_neighbor(int fd);
 	string listservers();
 	void add_to_serverlist(int fd, struct sockaddr_in& address, string server_id);
 	void update_neighbor(int fd, string id, string ip, int port);
-	void update_server_id(int fd, string new_id);
-	void update_server_port(int fd, int port);
+	void update_neighbor_id(int fd, string new_id);
 	void accept_incomming_server(int fd, struct sockaddr_in& address);
 	void connect_to_server(string sub_command);
 	void disconnect_server(int fd);
 	void service_tcp_server_request(int fd);
-	int get_server_fd_by_id(string id);
+	int get_neighbor_fd_by_id(string id);
 	void clear_routing_table();
-	void run_scheduled_tasks();
 	void send_keepalive(int fd);
 	void send_keepalive_to_all();
 	void update_routes();
+	void run_scheduled_tasks();
+	void print_routing_status();
 
 	/* Client/Server connection related methods */
 	void write_to_fd(int fd, string message);

@@ -15,6 +15,7 @@ void RoutingTable::set_id(string id)
 
 void RoutingTable::add(string from_id, string added_id)
 {   
+    // I do not want to add myself to the table. 
     if (added_id == my_id || from_id == my_id) { return; }
     vector<string> new_vec;
     if (table.find(from_id) != table.end())
@@ -31,16 +32,18 @@ void RoutingTable::add(string from_id, string added_id)
 
 void RoutingTable::remove(string removed_id)
 {
+
     if (table.find(removed_id) != table.end())
     {
-        table.erase(removed_id);
         for(auto it = table.begin(); it != table.end(); ++it)
         {
-            if (!it->second.empty())
+            if (!it->second.empty() && !it->second.at(0).compare(removed_id))
             {
-                table.erase(it->second.at(0));
+
+                table.erase(it->first);
             }
         }
+        table.erase(removed_id);
     }
 }
 
